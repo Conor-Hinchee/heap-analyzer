@@ -3,7 +3,7 @@
   "version": "1.0.2",
   "type": "module",
   "bin": {
-    "heap-analyzer": "bin/heap-analyzer.js"
+    "heap-analyzer": "bin/index.js"
   },
   "scripts": {
     "hello": "node hello.js",
