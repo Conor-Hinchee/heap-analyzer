@@ -1,7 +1,5 @@
-#!/usr/bin/env node
-
-import { render, Text, Box, Newline } from 'ink';
-import React from 'react';
+import React from "react";
+import { Text, Box, Newline } from "ink";
 
 const asciiArt = `
     ██╗  ██╗███████╗ █████╗ ██████╗ 
@@ -19,38 +17,53 @@ const asciiArt = `
     ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝ ╚═╝   ╚══════╝╚══════╝╚═╝  ╚═╝
 `;
 
-function WelcomeScreen() {
-  return React.createElement(Box, {
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingX: 2,
-    paddingY: 1
-  },
-    React.createElement(Text, { color: 'cyan', bold: true }, asciiArt),
-    React.createElement(Newline),
-    React.createElement(Text, { color: 'green', bold: true }, '🚀 Welcome to Heap Analyzer'),
-    React.createElement(Newline),
-    React.createElement(Box, { flexDirection: 'column', alignItems: 'center', width: 80 },
-      React.createElement(Text, { color: 'yellow' }, 'A CLI tool for analyzing JavaScript heap snapshots from Google DevTools.'),
-      React.createElement(Text, { color: 'yellow' }, 'Helps developers trace memory issues, browser crashes, and provides'),
-      React.createElement(Text, { color: 'yellow' }, 'actionable insights for fixing leaks in JavaScript applications.'),
-    ),
-    React.createElement(Newline),
-    React.createElement(Text, { color: 'magenta', italic: true }, '� Cut through the clutter and get down to actionable memory fixes'),
-    React.createElement(Newline),
-    React.createElement(Text, { color: 'gray' }, 'Press Ctrl+C to exit')
+interface WelcomeProps {
+  onNext: () => void;
+}
+
+export const Welcome: React.FC<WelcomeProps> = ({ onNext }) => {
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      onNext();
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [onNext]);
+
+  return (
+    <Box
+      flexDirection="column"
+      alignItems="center"
+      justifyContent="center"
+      paddingX={2}
+      paddingY={1}
+    >
+      <Text color="cyan" bold>
+        {asciiArt}
+      </Text>
+      <Newline />
+      <Text color="green" bold>
+        🚀 Welcome to Heap Analyzer
+      </Text>
+      <Newline />
+      <Box flexDirection="column" alignItems="center" width={80}>
+        <Text color="yellow">
+          A CLI tool for analyzing JavaScript heap snapshots from Google
+          DevTools.
+        </Text>
+        <Text color="yellow">
+          Helps developers trace memory issues, browser crashes, and provides
+        </Text>
+        <Text color="yellow">
+          actionable insights for fixing leaks in JavaScript applications.
+        </Text>
+      </Box>
+      <Newline />
+      <Text color="magenta" italic>
+        💡 Cut through the clutter and get down to actionable memory fixes
+      </Text>
+      <Newline />
+      <Text color="gray">Initializing... Please wait</Text>
+    </Box>
   );
-}
-
-function App({ start }) {
-  if (start) {
-    return React.createElement(WelcomeScreen);
-  }
-  return React.createElement(Text, null, 'Heap Analyzer CLI - Use -start to begin');
-}
-
-const args = process.argv.slice(2);
-const start = args.includes('-start');
-
-render(React.createElement(App, { start }));
+};
