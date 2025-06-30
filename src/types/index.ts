@@ -23,6 +23,7 @@ export type AppStep =
   | 'checkDirectory' 
   | 'promptDirectory' 
   | 'directoryCreated' 
+  | 'guideSnapshot'
   | 'ready' 
   | 'analyze' 
   | 'results';

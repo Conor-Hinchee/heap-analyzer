@@ -11,6 +11,7 @@
     "release-patch": "npm version patch && npm publish",
     "build": "tsc",
     "dev": "tsx src/index.ts",
+    "dev:watch": "tsc --watch",
     "prepublishOnly": "npm run build"
   },
   "keywords": [],

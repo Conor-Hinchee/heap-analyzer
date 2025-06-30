@@ -5,6 +5,7 @@ import { Welcome } from "./components/Welcome.js";
 import { DirectoryCheck } from "./components/DirectoryCheck.js";
 import { SnapshotPrompt } from "./components/SnapshotPrompt.js";
 import { Analysis } from "./components/Analysis.js";
+import { SnapshotGuide } from "./components/SnapshotGuide.js";
 import {
   checkSnapshotDirectory,
   createSnapshotDirectory,
@@ -14,13 +15,19 @@ import {
 export const App: React.FC = () => {
   const [currentStep, setCurrentStep] = React.useState<AppStep>("welcome");
   const [snapshotFiles, setSnapshotFiles] = React.useState<any[]>([]);
+  const [isRescanning, setIsRescanning] = React.useState(false);
 
   React.useEffect(() => {
     if (currentStep === "checkDirectory") {
       if (checkSnapshotDirectory("./snapshots")) {
         const files = getSnapshotFiles("./snapshots");
         setSnapshotFiles(files);
-        setCurrentStep("ready");
+        // If no snapshots exist, guide user to create them
+        if (files.length === 0) {
+          setCurrentStep("guideSnapshot");
+        } else {
+          setCurrentStep("ready");
+        }
       } else {
         setCurrentStep("promptDirectory");
       }
@@ -30,7 +37,7 @@ export const App: React.FC = () => {
   const handleCreateDirectory = () => {
     try {
       createSnapshotDirectory("./snapshots");
-      setCurrentStep("directoryCreated");
+      setCurrentStep("guideSnapshot");
     } catch (error) {
       console.error("Failed to create snapshots directory:", error);
       process.exit(1);
@@ -39,6 +46,24 @@ export const App: React.FC = () => {
 
   const handleExit = () => {
     process.exit(0);
+  };
+
+  const handleRescanSnapshots = () => {
+    setIsRescanning(true);
+
+    // Add a small delay to show the loading state
+    setTimeout(() => {
+      const files = getSnapshotFiles("./snapshots");
+      setSnapshotFiles(files);
+      setIsRescanning(false);
+    }, 800); // 800ms delay for visual feedback
+  };
+
+  const handleSnapshotGuideComplete = () => {
+    // Refresh snapshot files and proceed
+    const files = getSnapshotFiles("./snapshots");
+    setSnapshotFiles(files);
+    setCurrentStep("ready");
   };
 
   switch (currentStep) {
@@ -53,19 +78,20 @@ export const App: React.FC = () => {
         onCancel: handleExit,
       });
 
-    case "directoryCreated":
-      return React.createElement(
-        Text,
-        { color: "green" },
-        "✅ Snapshots directory created! You can now add .heapsnapshot files and run the analyzer again."
-      );
+    case "guideSnapshot":
+      return React.createElement(SnapshotGuide, {
+        onContinue: handleSnapshotGuideComplete,
+        onSkip: handleSnapshotGuideComplete,
+      });
 
     case "ready":
       return React.createElement(SnapshotPrompt, {
         snapshotCount: snapshotFiles.length,
         onAnalyze: () => setCurrentStep("analyze"),
         onView: () => console.log("View functionality coming soon!"),
+        onRescan: handleRescanSnapshots,
         onExit: handleExit,
+        isRescanning: isRescanning,
       });
 
     case "analyze":
