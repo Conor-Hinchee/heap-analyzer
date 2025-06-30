@@ -6,16 +6,22 @@ import { DirectoryCheck } from "./components/DirectoryCheck.js";
 import { SnapshotPrompt } from "./components/SnapshotPrompt.js";
 import { Analysis } from "./components/Analysis.js";
 import { SnapshotGuide } from "./components/SnapshotGuide.js";
+import { SingleHeapAnalysis } from "./components/SingleHeapAnalysis.js";
 import {
   checkSnapshotDirectory,
   createSnapshotDirectory,
   getSnapshotFiles,
 } from "./utils/fileHelpers.js";
+import { analyzeHeapSnapshot, AnalysisResult } from "./utils/heapAnalyzer.js";
 
 export const App: React.FC = () => {
   const [currentStep, setCurrentStep] = React.useState<AppStep>("welcome");
   const [snapshotFiles, setSnapshotFiles] = React.useState<any[]>([]);
   const [isRescanning, setIsRescanning] = React.useState(false);
+  const [singleAnalysisResult, setSingleAnalysisResult] =
+    React.useState<AnalysisResult | null>(null);
+  const [currentSnapshotName, setCurrentSnapshotName] =
+    React.useState<string>("");
 
   React.useEffect(() => {
     if (currentStep === "checkDirectory") {
@@ -66,6 +72,20 @@ export const App: React.FC = () => {
     setCurrentStep("ready");
   };
 
+  const handleSingleAnalysis = async (filename: string) => {
+    try {
+      setCurrentSnapshotName(filename);
+      setCurrentStep("singleAnalysis");
+      const filePath = `./snapshots/${filename}`;
+      const result = await analyzeHeapSnapshot(filePath);
+      setSingleAnalysisResult(result);
+    } catch (error) {
+      console.error("Failed to analyze heap snapshot:", error);
+      // Could add error state here
+      setCurrentStep("ready");
+    }
+  };
+
   switch (currentStep) {
     case "welcome":
       return React.createElement(Welcome, {
@@ -87,7 +107,9 @@ export const App: React.FC = () => {
     case "ready":
       return React.createElement(SnapshotPrompt, {
         snapshotCount: snapshotFiles.length,
+        snapshotFiles: snapshotFiles,
         onAnalyze: () => setCurrentStep("analyze"),
+        onSingleAnalysis: handleSingleAnalysis,
         onView: () => console.log("View functionality coming soon!"),
         onRescan: handleRescanSnapshots,
         onExit: handleExit,
@@ -96,6 +118,17 @@ export const App: React.FC = () => {
 
     case "analyze":
       return React.createElement(Analysis, { isLoading: true });
+
+    case "singleAnalysis":
+      if (singleAnalysisResult) {
+        return React.createElement(SingleHeapAnalysis, {
+          analysisResult: singleAnalysisResult,
+          snapshotName: currentSnapshotName,
+          onBack: () => setCurrentStep("ready"),
+        });
+      } else {
+        return React.createElement(Analysis, { isLoading: true });
+      }
 
     default:
       return React.createElement(Text, null, "Loading...");

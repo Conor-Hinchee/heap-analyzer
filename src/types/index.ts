@@ -25,7 +25,8 @@ export type AppStep =
   | 'directoryCreated' 
   | 'guideSnapshot'
   | 'ready' 
-  | 'analyze' 
+  | 'analyze'
+  | 'singleAnalysis'
   | 'results';
 
 export interface MenuOption {

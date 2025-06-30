@@ -1,10 +1,13 @@
 import React from "react";
 import { Text, Box, Newline, useInput } from "ink";
-import { MenuOption } from "../types/index.js";
+import { MenuOption, SnapshotFile } from "../types/index.js";
+import { formatBytes } from "../utils/heapAnalyzer.js";
 
 interface SnapshotPromptProps {
   snapshotCount: number;
+  snapshotFiles: SnapshotFile[];
   onAnalyze: () => void;
+  onSingleAnalysis: (filename: string) => void;
   onView: () => void;
   onRescan?: () => void;
   onExit: () => void;
@@ -13,12 +16,27 @@ interface SnapshotPromptProps {
 
 export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
   snapshotCount,
+  snapshotFiles,
   onAnalyze,
+  onSingleAnalysis,
   onView,
   onRescan,
   onExit,
   isRescanning = false,
 }) => {
+  // Check for single.heapsnapshot file
+  const hasSingleSnapshot = snapshotFiles.some(
+    (file) => file.name === "single.heapsnapshot"
+  );
+
+  // Check for before/after snapshots for comparison
+  const hasBeforeSnapshot = snapshotFiles.some(
+    (file) => file.name === "before.heapsnapshot"
+  );
+  const hasAfterSnapshot = snapshotFiles.some(
+    (file) => file.name === "after.heapsnapshot"
+  );
+  const hasComparisonPair = hasBeforeSnapshot && hasAfterSnapshot;
   useInput((input) => {
     // Prevent input handling while rescanning
     if (isRescanning) return;
@@ -39,16 +57,47 @@ export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
       // Normal options when snapshots exist
       switch (input) {
         case "1":
-          onAnalyze();
+          if (hasSingleSnapshot) {
+            onSingleAnalysis("single.heapsnapshot");
+          } else {
+            onAnalyze();
+          }
           break;
         case "2":
-          onView();
+          if (hasSingleSnapshot && hasComparisonPair) {
+            onAnalyze(); // Compare before/after
+          } else if (hasSingleSnapshot) {
+            onView();
+          } else {
+            onAnalyze();
+          }
           break;
         case "3":
+          if (hasSingleSnapshot && hasComparisonPair) {
+            onView();
+          } else if (hasSingleSnapshot) {
+            onRescan?.();
+          } else {
+            onView();
+          }
+          break;
+        case "4":
+          if (hasSingleSnapshot && hasComparisonPair) {
+            onRescan?.();
+          } else if (hasSingleSnapshot) {
+            onExit();
+          } else {
+            onRescan?.();
+          }
+          break;
+        case "5":
+          if (hasSingleSnapshot && hasComparisonPair) {
+            onExit();
+          }
+          break;
         case "r":
           onRescan?.();
           break;
-        case "4":
         case "q":
           onExit();
           break;
@@ -95,8 +144,8 @@ export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
             💡 Recommended naming:
           </Text>
           <Text>
-            • <Text color="magenta">single.heapsnapshot</Text> - Single snapshot
-            analysis
+            • <Text color="magenta">single.heapsnapshot</Text> - For single
+            snapshot analysis
           </Text>
           <Text>
             • <Text color="magenta">before.heapsnapshot</Text> - Initial state
@@ -105,6 +154,20 @@ export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
             • <Text color="magenta">after.heapsnapshot</Text> - After
             interactions
           </Text>
+          <Newline />
+        </>
+      )}
+
+      {snapshotCount > 0 && (
+        <>
+          <Text color="cyan" bold>
+            📁 Found snapshots:
+          </Text>
+          {snapshotFiles.map((file) => (
+            <Text key={file.name} color="gray">
+              • {file.name} ({formatBytes(file.size)})
+            </Text>
+          ))}
           <Newline />
         </>
       )}
@@ -125,12 +188,51 @@ export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
             </>
           ) : (
             <>
-              <Text color="green">[1] Analyze snapshots for memory leaks</Text>
-              <Text color="yellow">[2] View snapshot information</Text>
-              <Text color="cyan">
-                [3] Rescan directory for new snapshots (or press 'r')
-              </Text>
-              <Text color="red">[4] Exit (or press 'q')</Text>
+              {hasSingleSnapshot && (
+                <Text color="blue">
+                  [1] � Analyze single.heapsnapshot (top memory retainers)
+                </Text>
+              )}
+              {!hasSingleSnapshot && (
+                <Text color="green">
+                  [1] Analyze snapshots for memory leaks
+                </Text>
+              )}
+
+              {hasSingleSnapshot && hasComparisonPair && (
+                <Text color="green">
+                  [2] 📊 Compare before.heapsnapshot vs after.heapsnapshot
+                </Text>
+              )}
+              {hasSingleSnapshot && !hasComparisonPair && (
+                <Text color="yellow">[2] View snapshot information</Text>
+              )}
+              {!hasSingleSnapshot && (
+                <Text color="yellow">[2] View snapshot information</Text>
+              )}
+
+              {hasSingleSnapshot && hasComparisonPair ? (
+                <Text color="yellow">[3] View snapshot information</Text>
+              ) : hasSingleSnapshot ? (
+                <Text color="cyan">[3] Rescan directory (or press 'r')</Text>
+              ) : (
+                <Text color="yellow">[3] View snapshot information</Text>
+              )}
+
+              {hasSingleSnapshot && hasComparisonPair ? (
+                <Text color="cyan">[4] Rescan directory (or press 'r')</Text>
+              ) : hasSingleSnapshot ? (
+                <Text color="red">[4] Exit (or press 'q')</Text>
+              ) : (
+                <Text color="cyan">[4] Rescan directory (or press 'r')</Text>
+              )}
+
+              {hasSingleSnapshot && hasComparisonPair && (
+                <Text color="red">[5] Exit (or press 'q')</Text>
+              )}
+              {!hasSingleSnapshot && (
+                <Text color="red">[5] Exit (or press 'q')</Text>
+              )}
             </>
           )}
 
