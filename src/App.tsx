@@ -7,6 +7,7 @@ import { SnapshotPrompt } from "./components/SnapshotPrompt.js";
 import { Analysis } from "./components/Analysis.js";
 import { SnapshotGuide } from "./components/SnapshotGuide.js";
 import { SingleHeapAnalysis } from "./components/SingleHeapAnalysis.js";
+import { SnapshotInfo } from "./components/SnapshotInfo.js";
 import {
   checkSnapshotDirectory,
   createSnapshotDirectory,
@@ -22,6 +23,8 @@ export const App: React.FC = () => {
     React.useState<AnalysisResult | null>(null);
   const [currentSnapshotName, setCurrentSnapshotName] =
     React.useState<string>("");
+  const [currentSnapshotData, setCurrentSnapshotData] =
+    React.useState<any>(null);
 
   React.useEffect(() => {
     if (currentStep === "checkDirectory") {
@@ -77,6 +80,13 @@ export const App: React.FC = () => {
       setCurrentSnapshotName(filename);
       setCurrentStep("singleAnalysis");
       const filePath = `./snapshots/${filename}`;
+
+      // Read raw snapshot data for tracer
+      const fs = await import("fs");
+      const rawData = fs.readFileSync(filePath, "utf8");
+      const snapshotData = JSON.parse(rawData);
+      setCurrentSnapshotData(snapshotData);
+
       const result = await analyzeHeapSnapshot(filePath);
       setSingleAnalysisResult(result);
     } catch (error) {
@@ -110,7 +120,7 @@ export const App: React.FC = () => {
         snapshotFiles: snapshotFiles,
         onAnalyze: () => setCurrentStep("analyze"),
         onSingleAnalysis: handleSingleAnalysis,
-        onView: () => console.log("View functionality coming soon!"),
+        onView: () => setCurrentStep("snapshotInfo"),
         onRescan: handleRescanSnapshots,
         onExit: handleExit,
         isRescanning: isRescanning,
@@ -124,11 +134,18 @@ export const App: React.FC = () => {
         return React.createElement(SingleHeapAnalysis, {
           analysisResult: singleAnalysisResult,
           snapshotName: currentSnapshotName,
+          snapshotData: currentSnapshotData,
           onBack: () => setCurrentStep("ready"),
         });
       } else {
         return React.createElement(Analysis, { isLoading: true });
       }
+
+    case "snapshotInfo":
+      return React.createElement(SnapshotInfo, {
+        snapshotFiles: snapshotFiles,
+        onBack: () => setCurrentStep("ready"),
+      });
 
     default:
       return React.createElement(Text, null, "Loading...");

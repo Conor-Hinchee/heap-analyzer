@@ -27,6 +27,7 @@ export type AppStep =
   | 'ready' 
   | 'analyze'
   | 'singleAnalysis'
+  | 'snapshotInfo'
   | 'results';
 
 export interface MenuOption {

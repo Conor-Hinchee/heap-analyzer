@@ -12,7 +12,8 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "dev:watch": "tsc --watch",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "clear-reports": "rm -rf reports/* && echo 'Reports directory cleared successfully'"
   },
   "keywords": [],
   "author": "",

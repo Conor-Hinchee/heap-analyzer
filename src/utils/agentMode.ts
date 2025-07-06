@@ -1,11 +1,34 @@
 import fs from 'fs';
 import path from 'path';
 import { analyzeHeapSnapshot, AnalysisResult } from './heapAnalyzer.js';
+import { RetainerTracer } from './retainerTracer.js';
+import { FrameworkDetector, FrameworkDetectionResult, formatFrameworkDetection } from './frameworkDetector.js';
 
 interface AgentAnalysisReport {
   timestamp: string;
   snapshotPath: string;
   analysis: AnalysisResult;
+  frameworkInfo?: FrameworkDetectionResult;
+  traceResults?: {
+    totalLikelyLeaks: number;
+    highConfidenceLeaks: number;
+    totalRetainedByLeaks: number;
+    leakCategories: Record<string, number>;
+  };
+  distributedAnalysis?: {
+    suspiciousPatterns: Array<{
+      type: string;
+      description: string;
+      severity: 'low' | 'medium' | 'high';
+      recommendation: string;
+    }>;
+    distributedMemory: {
+      timerRelatedMemory: number;
+      closureMemory: number;
+      arrayMemory: number;
+      fragmentedMemory: number;
+    };
+  };
   insights: string[];
   recommendations: string[];
   severity: 'low' | 'medium' | 'high' | 'critical';
@@ -22,12 +45,14 @@ export async function runAgentMode(snapshotPath: string): Promise<void> {
     }
 
     console.log(`📊 Analyzing snapshot: ${path.basename(snapshotPath)}`);
-    console.log('⏳ Processing heap snapshot data...\n');
+    console.log('⏳ Processing heap snapshot data...');
+    console.log('🔍 Running advanced leak detection...');
+    console.log('🎯 Detecting frameworks and libraries...\n');
 
     // Analyze the heap snapshot
     const analysis = await analyzeHeapSnapshot(snapshotPath);
     
-    // Generate agent report
+    // Generate agent report with enhanced tracing
     const report = generateAgentReport(snapshotPath, analysis);
     
     // Display results
@@ -47,50 +72,181 @@ function generateAgentReport(snapshotPath: string, analysis: AnalysisResult): Ag
   const insights: string[] = [];
   const recommendations: string[] = [];
   let severity: 'low' | 'medium' | 'high' | 'critical' = 'low';
+  let traceResults: AgentAnalysisReport['traceResults'];
+  let frameworkInfo: FrameworkDetectionResult | undefined;
+  let distributedAnalysis: AgentAnalysisReport['distributedAnalysis'];
 
-  // Analyze top retainers for insights
+  // Enhanced analysis with tracer and framework detection
   if (analysis.topRetainers && analysis.topRetainers.length > 0) {
+    // Get the snapshot data for tracing and framework detection
+    const snapshotData = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    const tracer = new RetainerTracer(snapshotData, analysis.topRetainers.map(r => r.node));
+    
+    // Perform framework detection on all nodes for better coverage
+    const allNodes = Object.values(snapshotData.nodes || {}).map((nodeData: any, index: number) => ({
+      nodeIndex: index,
+      type: nodeData.type || 'unknown',
+      name: nodeData.name || '',
+      selfSize: nodeData.selfSize || 0,
+      retainedSize: nodeData.retainedSize || nodeData.selfSize || 0,
+      id: nodeData.id || index
+    })).filter(node => node.name || node.type);
+    
+    const frameworkDetector = new FrameworkDetector(allNodes.slice(0, 1000)); // Sample first 1000 for performance
+    frameworkInfo = frameworkDetector.detectFrameworks();
+    
+    console.log(`🎯 Framework detection: ${frameworkInfo.primary ? frameworkInfo.primary.name : 'None detected'}`);
+    
+    // Perform batch trace analysis
+    const traceAnalysis = tracer.batchTrace(analysis.topRetainers.map(r => r.node));
+    traceResults = traceAnalysis.summary;
+    
+    console.log(`🧠 Traced ${analysis.topRetainers.length} objects, found ${traceResults.totalLikelyLeaks} likely leaks`);
+
+    // Add distributed leak pattern analysis
+    distributedAnalysis = analyzeDistributedLeakPatterns(tracer, allNodes);
+    if (distributedAnalysis.suspiciousPatterns.length > 0) {
+      console.log(`🔍 Found ${distributedAnalysis.suspiciousPatterns.length} distributed leak patterns`);
+    }
+
+    // Incorporate distributed analysis into insights and recommendations
+    distributedAnalysis.suspiciousPatterns.forEach(pattern => {
+      if (pattern.severity === 'high') {
+        insights.push(`🚨 DISTRIBUTED LEAK: ${pattern.description}`);
+        if (severity !== 'critical') severity = 'high';
+      } else if (pattern.severity === 'medium') {
+        insights.push(`⚠️  DISTRIBUTED PATTERN: ${pattern.description}`);
+        if (severity === 'low') severity = 'medium';
+      } else {
+        insights.push(`ℹ️  Pattern detected: ${pattern.description}`);
+      }
+      recommendations.push(`🔧 ${pattern.recommendation}`);
+    });
+
+    // Add distributed memory summary
+    const { timerRelatedMemory, closureMemory, arrayMemory, fragmentedMemory } = distributedAnalysis.distributedMemory;
+    const totalDistributedMB = ((timerRelatedMemory + closureMemory + arrayMemory + fragmentedMemory) / (1024 * 1024)).toFixed(1);
+    
+    if (parseFloat(totalDistributedMB) > 5) {
+      insights.push(`📊 Distributed memory patterns: ${totalDistributedMB}MB across timers, closures, arrays, and fragmented objects`);
+    }
+
+    // Perform deep leak analysis
+    const deepAnalysis = performDeepLeakAnalysis(snapshotPath, analysis);
+    deepAnalysis.deepInsights.forEach(insight => insights.push(insight));
+    
+    // Add deep analysis recommendations
+    deepAnalysis.suspiciousPatterns.forEach(pattern => {
+      if (pattern.severity === 'high') {
+        if (severity !== 'critical') severity = 'high';
+        
+        if (pattern.type === 'timer_accumulation') {
+          recommendations.push(`🚨 Clear all timers: Check for uncleared setInterval/setTimeout calls (${pattern.count} detected)`);
+        } else if (pattern.type === 'event_listener_accumulation') {
+          recommendations.push(`🚨 Remove event listeners: Check for unremoved event listeners (${pattern.count} detected)`);
+        } else if (pattern.type === 'explicit_leak_indicators') {
+          recommendations.push(`🚨 Investigate leak indicators: Found explicit leak-related code patterns`);
+        } else {
+          recommendations.push(`🚨 Investigate ${pattern.type}: ${pattern.description}`);
+        }
+      }
+    });
+
+    // Generate insights based on trace results
     analysis.topRetainers.forEach((retainer, index) => {
+      const trace = traceAnalysis.traces[index];
       const sizeInMB = (retainer.node.selfSize / (1024 * 1024)).toFixed(2);
       const sizeInKB = (retainer.node.selfSize / 1024).toFixed(1);
+      const name = retainer.node.name || retainer.node.type;
       
-      if (retainer.node.selfSize > 1024 * 1024) { // > 1MB
-        severity = 'high';
-        insights.push(`Large memory consumer detected: ${retainer.node.name || retainer.node.type} (${sizeInMB}MB)`);
-        recommendations.push(`Investigate ${retainer.node.name || retainer.node.type} - consider memory optimization strategies`);
-      } else if (retainer.node.selfSize > 100 * 1024) { // > 100KB
+      if (trace.isLikelyLeak && trace.confidence > 0.7) {
+        // High confidence leak
+        severity = 'critical';
+        
+        if (name.includes('ExternalStringData') || retainer.category === 'STRING_DATA') {
+          insights.push(`🚨 CONFIRMED LEAK: ${sizeInMB}MB string leak detected with ${(trace.confidence * 100).toFixed(0)}% confidence`);
+          recommendations.push(`� ${trace.actionableAdvice}`);
+        } else {
+          insights.push(`🚨 CONFIRMED LEAK: ${name} (${sizeInMB}MB) - ${trace.explanation}`);
+          recommendations.push(`� ${trace.actionableAdvice}`);
+        }
+      } else if (trace.isLikelyLeak && trace.confidence > 0.5) {
+        // Medium confidence leak
+        if (severity === 'low' || severity === 'medium') severity = 'high';
+        
+        insights.push(`⚠️  PROBABLE LEAK: ${name} (${sizeInMB}MB) - ${trace.explanation}`);
+        recommendations.push(`� ${trace.actionableAdvice}`);
+      } else if (retainer.node.selfSize > 1024 * 1024) {
+        // Large object but likely legitimate
         if (severity === 'low') severity = 'medium';
-        insights.push(`Moderate memory usage: ${retainer.node.name || retainer.node.type} (${sizeInKB}KB)`);
-      }
-
-      // Category-specific insights
-      switch (retainer.category) {
-        case 'DOM':
-          insights.push(`DOM-related memory usage detected in ${retainer.node.name || retainer.node.type}`);
-          recommendations.push('Consider DOM cleanup strategies and event listener removal');
-          break;
-        case 'CLOSURE':
-          insights.push(`Closure retaining memory: ${retainer.node.name || retainer.node.type}`);
-          recommendations.push('Review closure scope and consider breaking circular references');
-          break;
-        case 'ARRAY':
-          insights.push(`Large array detected: ${retainer.node.name || retainer.node.type}`);
-          recommendations.push('Consider array size optimization or lazy loading');
-          break;
+        
+        if (name.includes('ExternalStringData')) {
+          insights.push(`� Large string object: ${sizeInMB}MB (likely legitimate library/bundle code)`);
+          recommendations.push(`ℹ️  This appears to be normal application code or libraries. Monitor for growth over time.`);
+        } else {
+          insights.push(`📊 Large object detected: ${name} (${sizeInMB}MB) - appears legitimate`);
+        }
+      } else if (retainer.node.selfSize > 100 * 1024) {
+        // Smaller objects
+        if (trace.isLikelyLeak) {
+          insights.push(`� Small leak detected: ${sizeInKB}KB in ${name} - ${trace.explanation}`);
+        } else {
+          insights.push(`� Normal memory usage: ${name} (${sizeInKB}KB)`);
+        }
       }
     });
   } else {
-    insights.push('No significant memory retainers found in the analysis');
-    recommendations.push('Heap snapshot may be small or analysis needs refinement');
+    insights.push('✅ No significant memory retainers found - heap appears healthy');
+    recommendations.push('💚 Continue monitoring, but no immediate action needed');
   }
 
-  // Overall memory analysis
+  // Overall memory analysis with context from traces
   const totalMB = (analysis.summary.totalRetainedSize / (1024 * 1024)).toFixed(2);
-  insights.push(`Total heap size: ${totalMB}MB with ${analysis.summary.totalObjects} objects`);
+  
+  if (traceResults && traceResults.totalLikelyLeaks > 0) {
+    const leakMB = (traceResults.totalRetainedByLeaks / (1024 * 1024)).toFixed(2);
+    insights.push(`💾 Total memory: ${totalMB}MB (${leakMB}MB likely leaked across ${traceResults.totalLikelyLeaks} objects)`);
+    
+    if (traceResults.highConfidenceLeaks > 0) {
+      severity = 'critical';
+      recommendations.push(`🚨 URGENT: ${traceResults.highConfidenceLeaks} high-confidence leaks found! Address immediately to prevent crashes.`);
+    } else if (traceResults.totalLikelyLeaks > 3) {
+      severity = 'high';
+      recommendations.push(`⚠️  Multiple memory leaks detected. Plan cleanup work to prevent performance degradation.`);
+    }
+  } else {
+    insights.push(`💾 Total memory footprint: ${totalMB}MB across ${analysis.summary.totalObjects.toLocaleString()} objects`);
+    
+    if (analysis.summary.totalRetainedSize > 50 * 1024 * 1024) { // > 50MB
+      if (severity === 'low') severity = 'medium';
+      recommendations.push('📊 High memory usage but no clear leaks detected. Monitor for growth trends.');
+    }
+  }
 
-  if (analysis.summary.totalRetainedSize > 20 * 1024 * 1024) { // > 20MB
-    severity = 'critical';
-    recommendations.push('Consider overall memory reduction strategies - heap size is critically high');
+  // Add framework-specific insights and recommendations
+  if (frameworkInfo?.primary) {
+    insights.push(`🎯 Framework detected: ${frameworkInfo.primary.name} (${(frameworkInfo.primary.confidence * 100).toFixed(0)}% confidence)`);
+    
+    if (frameworkInfo.primary.memoryPattern === 'heavy') {
+      insights.push(`⚠️  ${frameworkInfo.primary.name} uses heavy memory patterns - monitor framework-specific leaks`);
+    }
+    
+    // Add framework-specific leak recommendations
+    if (traceResults && traceResults.totalLikelyLeaks > 0) {
+      recommendations.push(`🎯 ${frameworkInfo.primary.name}-specific advice: Check for ${frameworkInfo.primary.commonLeakPatterns[0]}`);
+    }
+    
+    // Add framework recommendations
+    frameworkInfo.recommendations.forEach(rec => {
+      if (!recommendations.includes(rec)) {
+        recommendations.push(rec);
+      }
+    });
+  }
+
+  // Provide specific leak category advice
+  if (traceResults && Object.keys(traceResults.leakCategories).length > 0) {
+    insights.push(`🏷️  Leak categories: ${Object.entries(traceResults.leakCategories).map(([cat, count]) => `${cat} (${count})`).join(', ')}`);
   }
 
   // Category distribution insights
@@ -100,15 +256,16 @@ function generateAgentReport(snapshotPath: string, analysis: AnalysisResult): Ag
       categories[a[0]] > categories[b[0]] ? a : b
     );
     
-    insights.push(`Dominant memory category: ${topCategory[0]} (${topCategory[1]} objects)`);
-  } else {
-    insights.push('No specific memory categories identified');
+    insights.push(`📊 Dominant memory category: ${topCategory[0]} (${topCategory[1]} objects)`);
   }
 
   return {
     timestamp: new Date().toISOString(),
     snapshotPath,
     analysis,
+    frameworkInfo,
+    traceResults,
+    distributedAnalysis,
     insights,
     recommendations,
     severity
@@ -127,26 +284,64 @@ function displayAgentReport(report: AgentAnalysisReport): void {
   console.log('=' .repeat(50));
   console.log(`${severityEmoji[report.severity]} Severity: ${report.severity.toUpperCase()}`);
   console.log(`📅 Timestamp: ${new Date(report.timestamp).toLocaleString()}`);
-  console.log(`📁 Snapshot: ${path.basename(report.snapshotPath)}\n`);
+  console.log(`📁 Snapshot: ${path.basename(report.snapshotPath)}`);
+  
+  // Show leak detection results if available
+  if (report.traceResults) {
+    console.log(`🧠 Leak Detection: ${report.traceResults.totalLikelyLeaks} likely leaks found (${report.traceResults.highConfidenceLeaks} high confidence)`);
+  }
+  
+  // Show framework detection results if available
+  if (report.frameworkInfo?.primary) {
+    console.log(`🎯 Framework: ${report.frameworkInfo.primary.name} (${(report.frameworkInfo.primary.confidence * 100).toFixed(0)}% confidence)`);
+  }
+  
+  console.log('');
 
   // Key Insights
-  console.log('🔍 KEY INSIGHTS:');
+  console.log('🔍 WHAT WE FOUND:');
   report.insights.forEach((insight, index) => {
-    console.log(`  ${index + 1}. ${insight}`);
+    console.log(`  ${insight}`);
   });
 
   // Top Memory Consumers
-  console.log('\n🏆 TOP MEMORY CONSUMERS:');
+  console.log('\n🏆 BIGGEST MEMORY HOGS:');
   report.analysis.topRetainers.slice(0, 5).forEach((retainer, index) => {
     const sizeInKB = (retainer.node.selfSize / 1024).toFixed(1);
+    const sizeInMB = (retainer.node.selfSize / (1024 * 1024)).toFixed(2);
     const displayName = retainer.node.name || retainer.node.type || 'Unknown';
-    console.log(`  ${index + 1}. ${retainer.emoji} ${displayName} - ${sizeInKB}KB (${retainer.category})`);
+    const size = retainer.node.selfSize > 1024 * 1024 ? `${sizeInMB}MB` : `${sizeInKB}KB`;
+    
+    // Use tracer results for smarter labeling if available
+    let status = '';
+    if (report.traceResults) {
+      // Find the corresponding trace result based on the tracer analysis
+      const hasLikelyLeaks = report.traceResults.totalLikelyLeaks > 0;
+      const isLargeString = displayName.includes('ExternalStringData') && retainer.node.selfSize > 1024 * 1024;
+      
+      if (hasLikelyLeaks && isLargeString && index < 2) {
+        // First few large strings when leaks are detected
+        status = ' - probable leak (monitor)';
+      } else if (isLargeString) {
+        // Other large strings
+        status = ' - likely normal (library/framework)';
+      }
+    } else if (displayName.includes('ExternalStringData')) {
+      // Fallback to old behavior if no tracer results
+      status = ' - investigate source';
+    }
+    
+    if (displayName.includes('ExternalStringData')) {
+      console.log(`  ${index + 1}. 📝 String data consuming ${size}${status}`);
+    } else {
+      console.log(`  ${index + 1}. ${retainer.emoji} ${displayName} - ${size} (${retainer.category})`);
+    }
   });
 
   // Recommendations
-  console.log('\n💡 RECOMMENDATIONS:');
+  console.log('\n� WHAT TO DO ABOUT IT:');
   report.recommendations.forEach((rec, index) => {
-    console.log(`  ${index + 1}. ${rec}`);
+    console.log(`  ${rec}`);
   });
 
   // Memory Summary
@@ -154,7 +349,60 @@ function displayAgentReport(report: AgentAnalysisReport): void {
   console.log(`\n📊 MEMORY SUMMARY:`);
   console.log(`  • Total Objects: ${report.analysis.summary.totalObjects.toLocaleString()}`);
   console.log(`  • Total Memory: ${totalMB}MB`);
+  if (report.traceResults) {
+    const leakMB = (report.traceResults.totalRetainedByLeaks / (1024 * 1024)).toFixed(2);
+    console.log(`  • Leaked Memory: ${leakMB}MB (${((report.traceResults.totalRetainedByLeaks / report.analysis.summary.totalRetainedSize) * 100).toFixed(1)}% of total)`);
+  }
   console.log(`  • Categories: ${Object.keys(report.analysis.summary.categories).length}`);
+
+  // Framework Summary
+  if (report.frameworkInfo?.primary) {
+    console.log('\n🎯 FRAMEWORK DETAILS:');
+    console.log(`  • Primary: ${report.frameworkInfo.primary.name} ${report.frameworkInfo.primary.version || ''}`);
+    console.log(`  • Memory Pattern: ${report.frameworkInfo.primary.memoryPattern}`);
+    
+    if (report.frameworkInfo.buildTools.length > 0) {
+      console.log(`  • Build Tools: ${report.frameworkInfo.buildTools.join(', ')}`);
+    }
+    
+    if (report.frameworkInfo.libraries.length > 0) {
+      console.log(`  • Libraries: ${report.frameworkInfo.libraries.join(', ')}`);
+    }
+    
+    if (report.frameworkInfo.totalFrameworkMemory > 0) {
+      const frameworkMB = (report.frameworkInfo.totalFrameworkMemory / (1024 * 1024)).toFixed(1);
+      console.log(`  • Framework Memory: ${frameworkMB}MB`);
+    }
+  }
+
+  // Distributed Analysis Summary
+  if (report.distributedAnalysis && report.distributedAnalysis.suspiciousPatterns.length > 0) {
+    console.log('\n🔍 DISTRIBUTED LEAK PATTERNS:');
+    report.distributedAnalysis.suspiciousPatterns.forEach((pattern, index) => {
+      const severityIcon = pattern.severity === 'high' ? '🚨' : pattern.severity === 'medium' ? '⚠️' : 'ℹ️';
+      console.log(`  ${severityIcon} ${pattern.type.replace(/_/g, ' ').toUpperCase()}: ${pattern.description}`);
+    });
+
+    const { timerRelatedMemory, closureMemory, arrayMemory, fragmentedMemory } = report.distributedAnalysis.distributedMemory;
+    const totalDistributedMB = ((timerRelatedMemory + closureMemory + arrayMemory + fragmentedMemory) / (1024 * 1024));
+    
+    if (totalDistributedMB > 1) {
+      console.log('\n📊 DISTRIBUTED MEMORY BREAKDOWN:');
+      if (timerRelatedMemory > 0) console.log(`  • Timer Objects: ${(timerRelatedMemory / (1024 * 1024)).toFixed(1)}MB`);
+      if (closureMemory > 0) console.log(`  • Closure Objects: ${(closureMemory / (1024 * 1024)).toFixed(1)}MB`);
+      if (arrayMemory > 0) console.log(`  • Array Objects: ${(arrayMemory / (1024 * 1024)).toFixed(1)}MB`);
+      if (fragmentedMemory > 0) console.log(`  • Fragmented Memory: ${(fragmentedMemory / (1024 * 1024)).toFixed(1)}MB`);
+      console.log(`  • Total Distributed: ${totalDistributedMB.toFixed(1)}MB`);
+    }
+  }
+
+  // Leak Categories Summary
+  if (report.traceResults && Object.keys(report.traceResults.leakCategories).length > 0) {
+    console.log('\n🏷️  LEAK BREAKDOWN BY TYPE:');
+    Object.entries(report.traceResults.leakCategories).forEach(([category, count]) => {
+      console.log(`  • ${category}: ${count} leak${count > 1 ? 's' : ''}`);
+    });
+  }
 }
 
 function saveReportToFile(report: AgentAnalysisReport): string {
@@ -171,6 +419,298 @@ function saveReportToFile(report: AgentAnalysisReport): string {
   fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
   
   return outputPath;
+}
+
+/**
+ * Analyze distributed leak patterns across the entire heap
+ * Detects subtle leaks that manifest as many small objects
+ */
+function analyzeDistributedLeakPatterns(tracer: RetainerTracer, allNodes: any[]): {
+  suspiciousPatterns: Array<{
+    type: string;
+    description: string;
+    severity: 'low' | 'medium' | 'high';
+    recommendation: string;
+  }>;
+  distributedMemory: {
+    timerRelatedMemory: number;
+    closureMemory: number;
+    arrayMemory: number;
+    fragmentedMemory: number;
+  };
+} {
+  const suspiciousPatterns: Array<{
+    type: string;
+    description: string;
+    severity: 'low' | 'medium' | 'high';
+    recommendation: string;
+  }> = [];
+
+  const distributedMemory = {
+    timerRelatedMemory: 0,
+    closureMemory: 0,
+    arrayMemory: 0,
+    fragmentedMemory: 0
+  };
+
+  // Analyze timer-related object accumulation
+  const timerNodes = allNodes.filter(node => {
+    const name = node.name?.toLowerCase() || '';
+    return name.includes('timer') || name.includes('interval') || name.includes('timeout');
+  });
+
+  if (timerNodes.length > 20) {
+    const totalTimerMemory = timerNodes.reduce((sum, node) => sum + (node.selfSize || 0), 0);
+    distributedMemory.timerRelatedMemory = totalTimerMemory;
+    
+    if (timerNodes.length > 100) {
+      suspiciousPatterns.push({
+        type: 'timer_accumulation',
+        description: `${timerNodes.length} timer-related objects detected (${(totalTimerMemory / (1024 * 1024)).toFixed(1)}MB)`,
+        severity: 'high',
+        recommendation: 'Check for uncleared setInterval/setTimeout calls. Ensure all timers are properly cleaned up in component unmount lifecycle.'
+      });
+    } else if (timerNodes.length > 50) {
+      suspiciousPatterns.push({
+        type: 'timer_buildup',
+        description: `${timerNodes.length} timer-related objects may indicate buildup`,
+        severity: 'medium',
+        recommendation: 'Monitor timer cleanup. Consider using cleanup functions in useEffect or componentWillUnmount.'
+      });
+    }
+  }
+
+  // Analyze closure/function accumulation
+  const closureNodes = allNodes.filter(node => {
+    const type = node.type || '';
+    const name = node.name || '';
+    return type.includes('closure') || name.includes('Function') || name.includes('Closure');
+  });
+
+  if (closureNodes.length > 50) {
+    const totalClosureMemory = closureNodes.reduce((sum, node) => sum + (node.selfSize || 0), 0);
+    distributedMemory.closureMemory = totalClosureMemory;
+    
+    const largeClosure = closureNodes.filter(node => (node.selfSize || 0) > 50 * 1024);
+    if (largeClosure.length > 10) {
+      suspiciousPatterns.push({
+        type: 'closure_accumulation',
+        description: `${largeClosure.length} large closures found (${(totalClosureMemory / (1024 * 1024)).toFixed(1)}MB total)`,
+        severity: 'high',
+        recommendation: 'Review closures capturing large variables. Use useCallback/useMemo to prevent recreation. Consider WeakRef for large captured data.'
+      });
+    }
+  }
+
+  // Analyze array accumulation patterns
+  const arrayNodes = allNodes.filter(node => {
+    const type = node.type || '';
+    const name = node.name || '';
+    return type === 'array' || name.includes('Array');
+  });
+
+  if (arrayNodes.length > 100) {
+    const totalArrayMemory = arrayNodes.reduce((sum, node) => sum + (node.selfSize || 0), 0);
+    distributedMemory.arrayMemory = totalArrayMemory;
+    
+    const largeArrays = arrayNodes.filter(node => (node.selfSize || 0) > 100 * 1024);
+    if (largeArrays.length > 5) {
+      suspiciousPatterns.push({
+        type: 'array_accumulation',
+        description: `${largeArrays.length} large arrays detected (${(totalArrayMemory / (1024 * 1024)).toFixed(1)}MB total)`,
+        severity: 'medium',
+        recommendation: 'Review arrays that may be growing without bounds. Implement size limits, pagination, or data pruning strategies.'
+      });
+    }
+  }
+
+  // Check for memory fragmentation (many small objects of similar size)
+  const sizeGroups = new Map<number, number>();
+  allNodes.forEach(node => {
+    const sizeGroup = Math.floor((node.selfSize || 0) / 1024); // Group by KB
+    sizeGroups.set(sizeGroup, (sizeGroups.get(sizeGroup) || 0) + 1);
+  });
+
+  const fragmentationGroups = Array.from(sizeGroups.entries())
+    .filter(([size, count]) => size > 0 && count > 200) // More than 200 objects of similar size
+    .sort((a, b) => b[1] - a[1]);
+
+  if (fragmentationGroups.length > 0) {
+    const [topSize, topCount] = fragmentationGroups[0];
+    const fragmentedMemory = topSize * topCount * 1024;
+    distributedMemory.fragmentedMemory = fragmentedMemory;
+    
+    suspiciousPatterns.push({
+      type: 'memory_fragmentation',
+      description: `${topCount} objects of ~${topSize}KB each (${(fragmentedMemory / (1024 * 1024)).toFixed(1)}MB fragmented)`,
+      severity: 'medium',
+      recommendation: 'Possible memory fragmentation. Consider object pooling or optimizing object creation patterns.'
+    });
+  }
+
+  return { suspiciousPatterns, distributedMemory };
+}
+
+/**
+ * Deep heap analysis to find subtle memory leaks
+ * Analyzes string patterns and extended retainer lists
+ */
+function performDeepLeakAnalysis(snapshotPath: string, analysis: AnalysisResult): {
+  deepInsights: string[];
+  suspiciousPatterns: Array<{
+    type: string;
+    count: number;
+    severity: 'low' | 'medium' | 'high';
+    description: string;
+  }>;
+} {
+  const deepInsights: string[] = [];
+  const suspiciousPatterns: Array<{
+    type: string;
+    count: number;
+    severity: 'low' | 'medium' | 'high';
+    description: string;
+  }> = [];
+
+  try {
+    // Load raw snapshot data for string analysis
+    const snapshotData = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    
+    const timerRefs: string[] = [];
+    const eventListeners: string[] = [];
+    const functionNames: string[] = [];
+    const suspiciousStrings: string[] = [];
+    
+    // Analyze strings for leak patterns
+    if (snapshotData.strings) {
+      snapshotData.strings.forEach((str: string) => {
+        const lowerStr = str.toLowerCase();
+        
+        // Timer/interval patterns
+        if (lowerStr.includes('settimeout') || lowerStr.includes('setinterval') || 
+            lowerStr.includes('timer') || lowerStr.includes('interval')) {
+          timerRefs.push(str);
+        }
+        
+        // Event listener patterns
+        if (lowerStr.includes('listener') || lowerStr.includes('handler') || 
+            lowerStr.includes('onclick') || lowerStr.includes('onload') ||
+            lowerStr.includes('addeventlistener')) {
+          eventListeners.push(str);
+        }
+        
+        // Function accumulation patterns
+        if (str.length > 5 && str.length < 50 && 
+            (str.includes('function') || str.includes('Function') || 
+             /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str))) {
+          functionNames.push(str);
+        }
+        
+        // Explicitly suspicious strings
+        if (str.length > 10 && (str.includes('leak') || 
+            str.includes('accumulate') || str.includes('grow'))) {
+          suspiciousStrings.push(str);
+        }
+      });
+    }
+    
+    // Analyze timer patterns
+    if (timerRefs.length > 10) {
+      const severity = timerRefs.length > 50 ? 'high' : timerRefs.length > 25 ? 'medium' : 'low';
+      suspiciousPatterns.push({
+        type: 'timer_accumulation',
+        count: timerRefs.length,
+        severity,
+        description: `${timerRefs.length} timer/interval references detected`
+      });
+      
+      if (severity === 'high') {
+        deepInsights.push(`🚨 HIGH timer activity: ${timerRefs.length} timer references (possible uncleared intervals)`);
+      } else {
+        deepInsights.push(`⚠️ Timer activity: ${timerRefs.length} timer references detected`);
+      }
+    }
+    
+    // Analyze event listener patterns
+    if (eventListeners.length > 20) {
+      const severity = eventListeners.length > 100 ? 'high' : eventListeners.length > 50 ? 'medium' : 'low';
+      suspiciousPatterns.push({
+        type: 'event_listener_accumulation',
+        count: eventListeners.length,
+        severity,
+        description: `${eventListeners.length} event listener references detected`
+      });
+      
+      if (severity === 'high') {
+        deepInsights.push(`🚨 HIGH event listener activity: ${eventListeners.length} references (possible unremoved listeners)`);
+      } else {
+        deepInsights.push(`⚠️ Event listener activity: ${eventListeners.length} references detected`);
+      }
+    }
+    
+    // Analyze function patterns
+    const functionCounts: Record<string, number> = {};
+    functionNames.forEach(name => {
+      functionCounts[name] = (functionCounts[name] || 0) + 1;
+    });
+    
+    const repeatedFunctions = Object.entries(functionCounts)
+      .filter(([name, count]) => count > 10)
+      .sort((a, b) => b[1] - a[1]);
+    
+    if (repeatedFunctions.length > 0) {
+      const topFunction = repeatedFunctions[0];
+      const severity = topFunction[1] > 100 ? 'high' : topFunction[1] > 50 ? 'medium' : 'low';
+      suspiciousPatterns.push({
+        type: 'function_accumulation',
+        count: repeatedFunctions.length,
+        severity,
+        description: `${repeatedFunctions.length} functions with high repetition (top: ${topFunction[0]} x${topFunction[1]})`
+      });
+      
+      if (severity === 'high') {
+        deepInsights.push(`🚨 Function accumulation: ${topFunction[0]} appears ${topFunction[1]} times`);
+      } else {
+        deepInsights.push(`⚠️ Repeated function pattern: ${repeatedFunctions.length} functions with high counts`);
+      }
+    }
+    
+    // Check for explicit leak indicators
+    if (suspiciousStrings.length > 0) {
+      suspiciousPatterns.push({
+        type: 'explicit_leak_indicators',
+        count: suspiciousStrings.length,
+        severity: 'high',
+        description: `Explicit leak-related strings found: ${suspiciousStrings.join(', ')}`
+      });
+      
+      deepInsights.push(`🚨 EXPLICIT LEAK INDICATORS: Found strings containing 'leak', 'accumulate', or 'grow'`);
+    }
+    
+    // Analyze extended retainer list (beyond top 20)
+    if (analysis.topRetainers && analysis.topRetainers.length > 20) {
+      const extendedRetainers = analysis.topRetainers.slice(20, 100);
+      const smallLeaks = extendedRetainers.filter(r => 
+        r.node.selfSize > 10 * 1024 && r.node.selfSize < 100 * 1024
+      );
+      
+      if (smallLeaks.length > 20) {
+        suspiciousPatterns.push({
+          type: 'distributed_small_leaks',
+          count: smallLeaks.length,
+          severity: 'medium',
+          description: `${smallLeaks.length} objects (10-100KB) that could indicate distributed leaks`
+        });
+        
+        deepInsights.push(`🔍 Distributed pattern: ${smallLeaks.length} medium-sized objects (10-100KB) detected`);
+      }
+    }
+    
+  } catch (error) {
+    deepInsights.push(`⚠️ Deep analysis error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+  
+  return { deepInsights, suspiciousPatterns };
 }
 
 export async function runContinuousAgent(snapshotDirectory: string, intervalSeconds: number = 60): Promise<void> {

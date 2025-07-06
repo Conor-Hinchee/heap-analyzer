@@ -20,6 +20,8 @@ Install as a dev dependency:
 npm install --save-dev heap-analyzer
 ```
 
+**🚀 Quick Start**: For immediate heap analysis, see [AGENT.md](./AGENT.md) - zero-config automated analysis guide.
+
 ## Usage
 
 ### Interactive Mode
