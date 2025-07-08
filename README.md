@@ -10,6 +10,7 @@ A CLI and agent tool for analyzing JavaScript heap snapshots from Google DevTool
 - 🔍 **Memory leak detection** with categorized insights
 - 💡 **Actionable recommendations** for optimization
 - 📁 **JSON reports** for CI/CD integration
+- 📝 **Markdown reports** for documentation and sharing
 - 🎯 **Smart categorization** of memory consumers
 
 ## Getting Started
@@ -46,6 +47,12 @@ Auto-analyze the default snapshot:
 npx heap-analyzer --agent
 ```
 
+Generate a markdown report:
+
+```sh
+npx heap-analyzer --agent --markdown
+```
+
 ### Watch Mode (Continuous Monitoring)
 
 Monitor a directory for new heap snapshots:
@@ -58,6 +65,7 @@ npx heap-analyzer --watch ./snapshots
 
 - `-a, --agent` - Run automated analysis on heap snapshot
 - `-w, --watch` - Monitor directory for new snapshots
+- `-md, --markdown` - Generate markdown report (use with --agent)
 - `-h, --help` - Show help information
 
 ## Agent Mode Features
@@ -69,6 +77,9 @@ Agent mode provides automated analysis with:
 - **Categorized Analysis**: Groups memory consumers by type (DOM, React, Closures, Arrays, etc.)
 - **Actionable Recommendations**: Specific suggestions for memory optimization
 - **JSON Reports**: Saves detailed analysis to `./reports/` for programmatic usage
+- **Markdown Reports**: Human-readable reports perfect for documentation and team sharing
+
+For detailed markdown report features, see [MARKDOWN_REPORTS.md](./MARKDOWN_REPORTS.md).
 
 ### Example Agent Output
 

@@ -8,12 +8,15 @@ import { Analysis } from "./components/Analysis.js";
 import { SnapshotGuide } from "./components/SnapshotGuide.js";
 import { SingleHeapAnalysis } from "./components/SingleHeapAnalysis.js";
 import { SnapshotInfo } from "./components/SnapshotInfo.js";
+import { ReportGeneration } from "./components/ReportGeneration.js";
+import { ReportCompletion } from "./components/ReportCompletion.js";
 import {
   checkSnapshotDirectory,
   createSnapshotDirectory,
   getSnapshotFiles,
 } from "./utils/fileHelpers.js";
 import { analyzeHeapSnapshot, AnalysisResult } from "./utils/heapAnalyzer.js";
+import { runAgentMode } from "./utils/agentMode.js";
 
 export const App: React.FC = () => {
   const [currentStep, setCurrentStep] = React.useState<AppStep>("welcome");
@@ -25,6 +28,11 @@ export const App: React.FC = () => {
     React.useState<string>("");
   const [currentSnapshotData, setCurrentSnapshotData] =
     React.useState<any>(null);
+  const [isGeneratingReport, setIsGeneratingReport] = React.useState(false);
+  const [reportSnapshotName, setReportSnapshotName] =
+    React.useState<string>("");
+  const [generatedReportPath, setGeneratedReportPath] =
+    React.useState<string>("");
 
   React.useEffect(() => {
     if (currentStep === "checkDirectory") {
@@ -95,6 +103,26 @@ export const App: React.FC = () => {
       setCurrentStep("ready");
     }
   };
+  const handleGenerateReport = async (filename: string) => {
+    try {
+      setReportSnapshotName(filename);
+      setCurrentStep("reportGeneration");
+      setIsGeneratingReport(true);
+      const filePath = `./snapshots/${filename}`;
+
+      // Run agent mode analysis to generate markdown report
+      const reportPath = await runAgentMode(filePath, { markdownOutput: true });
+
+      setIsGeneratingReport(false);
+      setGeneratedReportPath(reportPath);
+      // Go to completion screen instead of back to menu
+      setCurrentStep("reportCompletion");
+    } catch (error) {
+      console.error("Failed to generate markdown report:", error);
+      setIsGeneratingReport(false);
+      setCurrentStep("ready");
+    }
+  };
 
   switch (currentStep) {
     case "welcome":
@@ -124,6 +152,7 @@ export const App: React.FC = () => {
         onRescan: handleRescanSnapshots,
         onExit: handleExit,
         isRescanning: isRescanning,
+        onGenerateReport: handleGenerateReport, // Add report generation handler
       });
 
     case "analyze":
@@ -140,6 +169,19 @@ export const App: React.FC = () => {
       } else {
         return React.createElement(Analysis, { isLoading: true });
       }
+
+    case "reportGeneration":
+      return React.createElement(ReportGeneration, {
+        snapshotName: reportSnapshotName,
+        onBack: () => setCurrentStep("ready"),
+      });
+
+    case "reportCompletion":
+      return React.createElement(ReportCompletion, {
+        snapshotName: reportSnapshotName,
+        reportPath: generatedReportPath,
+        onBackToMenu: () => setCurrentStep("ready"),
+      });
 
     case "snapshotInfo":
       return React.createElement(SnapshotInfo, {

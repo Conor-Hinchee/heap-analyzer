@@ -34,7 +34,11 @@ interface AgentAnalysisReport {
   severity: 'low' | 'medium' | 'high' | 'critical';
 }
 
-export async function runAgentMode(snapshotPath: string): Promise<void> {
+interface AgentOptions {
+  markdownOutput?: boolean;
+}
+
+export async function runAgentMode(snapshotPath: string, options: AgentOptions = {}): Promise<string> {
   console.log('🤖 Running Heap Analyzer in Agent Mode...\n');
   
   try {
@@ -59,13 +63,27 @@ export async function runAgentMode(snapshotPath: string): Promise<void> {
     displayAgentReport(report);
     
     // Optionally save report to file
-    const outputPath = saveReportToFile(report);
-    console.log(`\n💾 Full report saved to: ${outputPath}`);
+    const outputPath = saveReportToFile(report, options.markdownOutput);
+    if (options.markdownOutput) {
+      console.log(`\n📝 Markdown report saved to: ${outputPath}`);
+    } else {
+      console.log(`\n💾 Full report saved to: ${outputPath}`);
+    }
+    
+    return outputPath;
     
   } catch (error) {
     console.error('❌ Error during agent analysis:', error);
     process.exit(1);
   }
+}
+
+export async function runContinuousAgent(watchDirectory: string): Promise<void> {
+  console.log(`🤖 Running Heap Analyzer in Watch Mode...`);
+  console.log(`👁️  Watching directory: ${watchDirectory}`);
+  console.log('⚠️  Watch mode is not yet fully implemented.');
+  console.log('💡 Use --agent mode for single snapshot analysis.');
+  process.exit(1);
 }
 
 function generateAgentReport(snapshotPath: string, analysis: AnalysisResult): AgentAnalysisReport {
@@ -405,7 +423,7 @@ function displayAgentReport(report: AgentAnalysisReport): void {
   }
 }
 
-function saveReportToFile(report: AgentAnalysisReport): string {
+function saveReportToFile(report: AgentAnalysisReport, asMarkdown: boolean = false): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const outputDir = './reports';
   
@@ -414,11 +432,16 @@ function saveReportToFile(report: AgentAnalysisReport): string {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  const outputPath = path.join(outputDir, `heap-analysis-${timestamp}.json`);
-  
-  fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
-  
-  return outputPath;
+  if (asMarkdown) {
+    const outputPath = path.join(outputDir, `heap-analysis-${timestamp}.md`);
+    const markdownContent = generateMarkdownReport(report);
+    fs.writeFileSync(outputPath, markdownContent);
+    return outputPath;
+  } else {
+    const outputPath = path.join(outputDir, `heap-analysis-${timestamp}.json`);
+    fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
+    return outputPath;
+  }
 }
 
 /**
@@ -713,39 +736,195 @@ function performDeepLeakAnalysis(snapshotPath: string, analysis: AnalysisResult)
   return { deepInsights, suspiciousPatterns };
 }
 
-export async function runContinuousAgent(snapshotDirectory: string, intervalSeconds: number = 60): Promise<void> {
-  console.log(`🤖 Running Continuous Heap Analyzer Agent Mode...`);
-  console.log(`📁 Monitoring directory: ${snapshotDirectory}`);
-  console.log(`⏱️  Check interval: ${intervalSeconds} seconds\n`);
+function generateMarkdownReport(report: AgentAnalysisReport): string {
+  const severityEmoji = {
+    low: '🟢',
+    medium: '🟡', 
+    high: '🟠',
+    critical: '🔴'
+  };
 
-  const processedSnapshots = new Set<string>();
+  const formattedDate = new Date(report.timestamp).toLocaleString();
+  const snapshotName = path.basename(report.snapshotPath);
+  const totalMB = (report.analysis.summary.totalRetainedSize / (1024 * 1024)).toFixed(2);
 
-  while (true) {
-    try {
-      // Check for new snapshot files
-      if (fs.existsSync(snapshotDirectory)) {
-        const files = fs.readdirSync(snapshotDirectory)
-          .filter(file => file.endsWith('.heapsnapshot'))
-          .map(file => path.join(snapshotDirectory, file));
+  let markdown = `# ${severityEmoji[report.severity]} Heap Analysis Report
 
-        for (const filePath of files) {
-          const stat = fs.statSync(filePath);
-          const fileKey = `${filePath}-${stat.mtime.getTime()}`;
-          
-          if (!processedSnapshots.has(fileKey)) {
-            console.log(`🔍 New snapshot detected: ${path.basename(filePath)}`);
-            await runAgentMode(filePath);
-            processedSnapshots.add(fileKey);
-            console.log('---\n');
-          }
-        }
+**Status:** ${report.severity.toUpperCase()}  
+**Date:** ${formattedDate}  
+**Snapshot:** \`${snapshotName}\`  
+**Total Memory:** ${totalMB}MB across ${report.analysis.summary.totalObjects.toLocaleString()} objects
+
+`;
+
+  // Leak Detection Summary
+  if (report.traceResults) {
+    const leakMB = (report.traceResults.totalRetainedByLeaks / (1024 * 1024)).toFixed(2);
+    const leakPercentage = ((report.traceResults.totalRetainedByLeaks / report.analysis.summary.totalRetainedSize) * 100).toFixed(1);
+    
+    markdown += `## 🧠 Leak Detection Summary
+
+- **Total Leaks Found:** ${report.traceResults.totalLikelyLeaks}
+- **High Confidence Leaks:** ${report.traceResults.highConfidenceLeaks}
+- **Leaked Memory:** ${leakMB}MB (${leakPercentage}% of total)
+
+`;
+  }
+
+  // Framework Detection
+  if (report.frameworkInfo?.primary) {
+    const confidence = (report.frameworkInfo.primary.confidence * 100).toFixed(0);
+    markdown += `## 🎯 Framework Detection
+
+- **Primary Framework:** ${report.frameworkInfo.primary.name} ${report.frameworkInfo.primary.version || ''}
+- **Confidence:** ${confidence}%
+- **Memory Pattern:** ${report.frameworkInfo.primary.memoryPattern}
+
+`;
+
+    if (report.frameworkInfo.buildTools.length > 0) {
+      markdown += `- **Build Tools:** ${report.frameworkInfo.buildTools.join(', ')}\n`;
+    }
+    
+    if (report.frameworkInfo.libraries.length > 0) {
+      markdown += `- **Libraries:** ${report.frameworkInfo.libraries.join(', ')}\n`;
+    }
+    
+    if (report.frameworkInfo.totalFrameworkMemory > 0) {
+      const frameworkMB = (report.frameworkInfo.totalFrameworkMemory / (1024 * 1024)).toFixed(1);
+      markdown += `- **Framework Memory:** ${frameworkMB}MB\n`;
+    }
+    
+    markdown += '\n';
+  }
+
+  // Key Insights
+  markdown += `## 🔍 Key Insights
+
+`;
+  report.insights.forEach(insight => {
+    markdown += `- ${insight}\n`;
+  });
+  markdown += '\n';
+
+  // Top Memory Consumers
+  markdown += `## 🏆 Top Memory Consumers
+
+| Rank | Object | Size | Category | Status |
+|------|--------|------|----------|--------|
+`;
+
+  report.analysis.topRetainers.slice(0, 10).forEach((retainer, index) => {
+    const sizeInKB = (retainer.node.selfSize / 1024).toFixed(1);
+    const sizeInMB = (retainer.node.selfSize / (1024 * 1024)).toFixed(2);
+    const displayName = retainer.node.name || retainer.node.type || 'Unknown';
+    const size = retainer.node.selfSize > 1024 * 1024 ? `${sizeInMB}MB` : `${sizeInKB}KB`;
+    
+    // Determine status based on trace results
+    let status = 'Normal';
+    if (report.traceResults) {
+      const hasLikelyLeaks = report.traceResults.totalLikelyLeaks > 0;
+      const isLargeString = displayName.includes('ExternalStringData') && retainer.node.selfSize > 1024 * 1024;
+      
+      if (hasLikelyLeaks && isLargeString && index < 2) {
+        status = '⚠️ Probable leak';
+      } else if (isLargeString) {
+        status = '✅ Normal (library)';
       }
+    }
+    
+    const cleanDisplayName = displayName.replace(/\|/g, '\\|'); // Escape pipes for markdown table
+    markdown += `| ${index + 1} | \`${cleanDisplayName}\` | ${size} | ${retainer.category} | ${status} |\n`;
+  });
 
-      // Wait for next check
-      await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
-    } catch (error) {
-      console.error('❌ Error in continuous monitoring:', error);
-      await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
+  markdown += '\n';
+
+  // Distributed Leak Patterns
+  if (report.distributedAnalysis && report.distributedAnalysis.suspiciousPatterns.length > 0) {
+    markdown += `## 🔍 Distributed Leak Patterns
+
+`;
+    report.distributedAnalysis.suspiciousPatterns.forEach(pattern => {
+      const severityIcon = pattern.severity === 'high' ? '🚨' : pattern.severity === 'medium' ? '⚠️' : 'ℹ️';
+      const patternType = pattern.type.replace(/_/g, ' ').toUpperCase();
+      markdown += `### ${severityIcon} ${patternType}
+
+**Description:** ${pattern.description}  
+**Recommendation:** ${pattern.recommendation}
+
+`;
+    });
+
+    // Distributed Memory Breakdown
+    const { timerRelatedMemory, closureMemory, arrayMemory, fragmentedMemory } = report.distributedAnalysis.distributedMemory;
+    const totalDistributedMB = ((timerRelatedMemory + closureMemory + arrayMemory + fragmentedMemory) / (1024 * 1024));
+    
+    if (totalDistributedMB > 1) {
+      markdown += `### 📊 Distributed Memory Breakdown
+
+| Memory Type | Size |
+|-------------|------|
+`;
+      if (timerRelatedMemory > 0) markdown += `| Timer Objects | ${(timerRelatedMemory / (1024 * 1024)).toFixed(1)}MB |\n`;
+      if (closureMemory > 0) markdown += `| Closure Objects | ${(closureMemory / (1024 * 1024)).toFixed(1)}MB |\n`;
+      if (arrayMemory > 0) markdown += `| Array Objects | ${(arrayMemory / (1024 * 1024)).toFixed(1)}MB |\n`;
+      if (fragmentedMemory > 0) markdown += `| Fragmented Memory | ${(fragmentedMemory / (1024 * 1024)).toFixed(1)}MB |\n`;
+      markdown += `| **Total Distributed** | **${totalDistributedMB.toFixed(1)}MB** |\n\n`;
     }
   }
+
+  // Leak Categories
+  if (report.traceResults && Object.keys(report.traceResults.leakCategories).length > 0) {
+    markdown += `## 🏷️ Leak Categories
+
+| Category | Count |
+|----------|-------|
+`;
+    Object.entries(report.traceResults.leakCategories).forEach(([category, count]) => {
+      markdown += `| ${category} | ${count} |\n`;
+    });
+    markdown += '\n';
+  }
+
+  // Recommendations
+  markdown += `## 🛠️ Recommendations
+
+`;
+  report.recommendations.forEach((rec, index) => {
+    markdown += `${index + 1}. ${rec}\n`;
+  });
+  markdown += '\n';
+
+  // Memory Categories
+  if (Object.keys(report.analysis.summary.categories).length > 0) {
+    markdown += `## 📊 Memory Categories
+
+| Category | Object Count |
+|----------|--------------|
+`;
+    Object.entries(report.analysis.summary.categories)
+      .sort(([,a], [,b]) => b - a)
+      .forEach(([category, count]) => {
+        markdown += `| ${category} | ${count.toLocaleString()} |\n`;
+      });
+    markdown += '\n';
+  }
+
+  // Technical Details
+  markdown += `## 📋 Technical Details
+
+- **Analysis Timestamp:** ${report.timestamp}
+- **Snapshot Path:** \`${report.snapshotPath}\`
+- **Total Objects:** ${report.analysis.summary.totalObjects.toLocaleString()}
+- **Total Memory:** ${totalMB}MB
+- **Categories Found:** ${Object.keys(report.analysis.summary.categories).length}
+
+`;
+
+  // Footer
+  markdown += `---
+*Report generated by Heap Analyzer CLI on ${formattedDate}*
+`;
+
+  return markdown;
 }

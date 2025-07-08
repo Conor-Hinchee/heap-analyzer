@@ -1,6 +1,7 @@
 import React from "react";
 import { Text, Box, Newline } from "ink";
 import { AnalysisResult } from "../types/index.js";
+import { DOMLeakAnalysis } from "./DOMLeakAnalysis.js";
 
 interface AnalysisProps {
   results?: AnalysisResult;
@@ -52,13 +53,51 @@ export const Analysis: React.FC<AnalysisProps> = ({
         Total Objects: {results.summary.totalObjects.toLocaleString()}
       </Text>
       <Text>
-        Total Size: {(results.summary.totalSize / 1024 / 1024).toFixed(2)} MB
+        Total Retained Size:{" "}
+        {(results.summary.totalRetainedSize / 1024 / 1024).toFixed(2)} MB
       </Text>
       <Text>
-        Top Constructors: {results.summary.topConstructors.join(", ")}
+        Categories:{" "}
+        {Object.entries(results.summary.categories)
+          .map(([cat, count]) => `${cat}: ${count}`)
+          .join(", ")}
       </Text>
       <Newline />
 
+      {/* DOM Leak Analysis */}
+      {results.detachedDOMNodes && results.domLeakSummary && (
+        <>
+          <DOMLeakAnalysis
+            detachedNodes={results.detachedDOMNodes}
+            summary={results.domLeakSummary}
+          />
+          <Newline />
+        </>
+      )}
+
+      {/* Top Retainers */}
+      {results.topRetainers && results.topRetainers.length > 0 && (
+        <>
+          <Text color="blue" bold>
+            🔝 Top Memory Retainers:
+          </Text>
+          {results.topRetainers.slice(0, 5).map((retainer, index) => (
+            <Box key={index} flexDirection="column" marginY={1}>
+              <Text color="yellow">
+                {retainer.emoji} {retainer.category}:{" "}
+                {retainer.node.name || retainer.node.type}
+              </Text>
+              <Text color="gray">
+                Size: {(retainer.node.selfSize / 1024).toFixed(1)}KB
+              </Text>
+              <Text color="cyan">{retainer.suggestion}</Text>
+            </Box>
+          ))}
+          <Newline />
+        </>
+      )}
+
+      {/* Legacy leaks support */}
       {results.leaks && results.leaks.length > 0 && (
         <>
           <Text color="red" bold>

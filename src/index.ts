@@ -8,6 +8,7 @@ const args = process.argv.slice(2);
 const isAgentMode = args.includes('--agent') || args.includes('-a');
 const isWatchMode = args.includes('--watch') || args.includes('-w');
 const showHelp = args.includes('--help') || args.includes('-h');
+const markdownOutput = args.includes('--markdown') || args.includes('-md');
 let snapshotPath = args.find(arg => arg.endsWith('.heapsnapshot'));
 
 // Show help if requested
@@ -24,11 +25,13 @@ Usage:
 Options:
   -a, --agent                           Run in agent mode for automated analysis
   -w, --watch                           Run in watch mode for continuous monitoring
+  -md, --markdown                       Output analysis as markdown in reports directory
   -h, --help                            Show help information
 
 Examples:
   heap-analyzer --agent                 # Analyze ./snapshots/single.heapsnapshot
   heap-analyzer --agent my-app.heapsnapshot    # Analyze specific file
+  heap-analyzer --agent --markdown     # Analyze and output as markdown report
   heap-analyzer --watch ./snapshots    # Monitor snapshots directory for new files
   `);
   process.exit(0);
@@ -46,7 +49,7 @@ if (isWatchMode) {
 } else if (isAgentMode) {
   // Run in agent mode
   if (snapshotPath) {
-    runAgentMode(snapshotPath);
+    runAgentMode(snapshotPath, { markdownOutput });
   } else {
     console.error('❌ No heap snapshot file found. Please specify a .heapsnapshot file or place one in ./snapshots/');
     process.exit(1);

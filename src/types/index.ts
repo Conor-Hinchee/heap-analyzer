@@ -5,12 +5,52 @@ export interface SnapshotFile {
   created: Date;
 }
 
+export interface HeapNode {
+  nodeIndex: number;
+  type: string;
+  name: string;
+  selfSize: number;
+  retainedSize: number;
+  id: number;
+}
+
+export interface RetainerResult {
+  node: HeapNode;
+  category: string;
+  emoji: string;
+  retainerPaths: string[][];
+  suggestion: string;
+}
+
+export interface DetachedDOMNode {
+  node: HeapNode;
+  isDetached: boolean;
+  retainerInfo: string[];
+  attributes: Record<string, string>;
+  elementType: string;
+}
+
+export interface DOMLeakSummary {
+  totalDetachedNodes: number;
+  detachedNodesByType: Record<string, number>;
+  suspiciousPatterns: string[];
+  retainerArrays: Array<{
+    name: string;
+    nodeCount: number;
+    retainedNodes: string[];
+  }>;
+}
+
 export interface AnalysisResult {
+  topRetainers: RetainerResult[];
+  detachedDOMNodes: DetachedDOMNode[];
+  domLeakSummary: DOMLeakSummary;
   summary: {
     totalObjects: number;
-    totalSize: number;
-    topConstructors: string[];
+    totalRetainedSize: number;
+    categories: Record<string, number>;
   };
+  // Legacy properties for backward compatibility
   leaks?: {
     type: string;
     description: string;
@@ -28,6 +68,8 @@ export type AppStep =
   | 'analyze'
   | 'singleAnalysis'
   | 'snapshotInfo'
+  | 'reportGeneration'
+  | 'reportCompletion'
   | 'results';
 
 export interface MenuOption {

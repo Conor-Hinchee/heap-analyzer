@@ -11,6 +11,7 @@ interface SnapshotPromptProps {
   onView: () => void;
   onRescan?: () => void;
   onExit: () => void;
+  onGenerateReport?: (filename: string) => void;
   isRescanning?: boolean;
 }
 
@@ -22,6 +23,7 @@ export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
   onView,
   onRescan,
   onExit,
+  onGenerateReport,
   isRescanning = false,
 }) => {
   // Check for single.heapsnapshot file
@@ -67,30 +69,39 @@ export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
           if (hasSingleSnapshot && hasComparisonPair) {
             onAnalyze(); // Compare before/after
           } else if (hasSingleSnapshot) {
-            onView();
+            onGenerateReport?.("single.heapsnapshot");
           } else {
             onAnalyze();
           }
           break;
         case "3":
           if (hasSingleSnapshot && hasComparisonPair) {
-            onView();
+            onGenerateReport?.("single.heapsnapshot");
           } else if (hasSingleSnapshot) {
-            onRescan?.();
+            onView();
           } else {
             onView();
           }
           break;
         case "4":
           if (hasSingleSnapshot && hasComparisonPair) {
-            onRescan?.();
+            onView();
           } else if (hasSingleSnapshot) {
-            onExit();
+            onRescan?.();
           } else {
             onRescan?.();
           }
           break;
         case "5":
+          if (hasSingleSnapshot && hasComparisonPair) {
+            onRescan?.();
+          } else if (hasSingleSnapshot) {
+            onExit();
+          } else {
+            onExit();
+          }
+          break;
+        case "6":
           if (hasSingleSnapshot && hasComparisonPair) {
             onExit();
           }
@@ -205,33 +216,38 @@ export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
                 </Text>
               )}
               {hasSingleSnapshot && !hasComparisonPair && (
-                <Text color="yellow">[2] View snapshot information</Text>
+                <Text color="green">[2] 📝 Generate markdown report</Text>
               )}
               {!hasSingleSnapshot && (
                 <Text color="yellow">[2] View snapshot information</Text>
               )}
 
               {hasSingleSnapshot && hasComparisonPair ? (
-                <Text color="yellow">[3] View snapshot information</Text>
+                <Text color="green">[3] 📝 Generate markdown report</Text>
               ) : hasSingleSnapshot ? (
-                <Text color="cyan">[3] Rescan directory (or press 'r')</Text>
+                <Text color="yellow">[3] View snapshot information</Text>
               ) : (
                 <Text color="yellow">[3] View snapshot information</Text>
               )}
 
               {hasSingleSnapshot && hasComparisonPair ? (
-                <Text color="cyan">[4] Rescan directory (or press 'r')</Text>
+                <Text color="yellow">[4] View snapshot information</Text>
               ) : hasSingleSnapshot ? (
-                <Text color="red">[4] Exit (or press 'q')</Text>
+                <Text color="cyan">[4] Rescan directory (or press 'r')</Text>
               ) : (
                 <Text color="cyan">[4] Rescan directory (or press 'r')</Text>
+              )}
+
+              {hasSingleSnapshot && hasComparisonPair ? (
+                <Text color="cyan">[5] Rescan directory (or press 'r')</Text>
+              ) : hasSingleSnapshot ? (
+                <Text color="red">[5] Exit (or press 'q')</Text>
+              ) : (
+                <Text color="red">[5] Exit (or press 'q')</Text>
               )}
 
               {hasSingleSnapshot && hasComparisonPair && (
-                <Text color="red">[5] Exit (or press 'q')</Text>
-              )}
-              {!hasSingleSnapshot && (
-                <Text color="red">[5] Exit (or press 'q')</Text>
+                <Text color="red">[6] Exit (or press 'q')</Text>
               )}
             </>
           )}
