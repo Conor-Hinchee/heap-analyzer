@@ -13,6 +13,7 @@ interface SnapshotPromptProps {
   onExit: () => void;
   onGenerateReport?: (filename: string) => void;
   isRescanning?: boolean;
+  isGeneratingReport?: boolean;
 }
 
 export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
@@ -25,6 +26,7 @@ export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
   onExit,
   onGenerateReport,
   isRescanning = false,
+  isGeneratingReport = false,
 }) => {
   // Check for single.heapsnapshot file
   const hasSingleSnapshot = snapshotFiles.some(
@@ -169,7 +171,7 @@ export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
         </>
       )}
 
-      {snapshotCount > 0 && (
+      {snapshotCount > 0 && !isGeneratingReport && (
         <>
           <Text color="cyan" bold>
             📁 Found snapshots:
@@ -183,7 +185,7 @@ export const SnapshotPrompt: React.FC<SnapshotPromptProps> = ({
         </>
       )}
 
-      {!isRescanning && (
+      {!isRescanning && !isGeneratingReport && (
         <>
           <Text color="cyan" bold>
             What would you like to do?

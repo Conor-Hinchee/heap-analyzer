@@ -4,25 +4,29 @@ import { Text, Box, Newline, useInput } from "ink";
 interface ReportGenerationProps {
   snapshotName: string;
   onBack: () => void;
+  onCancel?: () => void;
 }
 
 export const ReportGeneration: React.FC<ReportGenerationProps> = ({
   snapshotName,
   onBack,
+  onCancel,
 }) => {
   const [dots, setDots] = React.useState("");
+  const [showCancel, setShowCancel] = React.useState(true);
 
   React.useEffect(() => {
     const interval = setInterval(() => {
       setDots((prev) => (prev.length >= 3 ? "" : prev + "."));
     }, 500);
-
     return () => clearInterval(interval);
   }, []);
 
   useInput((input, key) => {
-    // Allow user to go back to menu on any key press
-    onBack();
+    if (input.toLowerCase() === "c" && showCancel) {
+      setShowCancel(false);
+      if (onCancel) onCancel();
+    }
   });
 
   return (
@@ -55,9 +59,15 @@ export const ReportGeneration: React.FC<ReportGenerationProps> = ({
 
       <Newline />
 
-      <Text color="yellow">
-        Press any key to return to menu (report will continue in background)
-      </Text>
+      {showCancel && (
+        <Text color="yellow">
+          Press{" "}
+          <Text color="red" bold>
+            c
+          </Text>{" "}
+          to cancel and return to menu
+        </Text>
+      )}
     </Box>
   );
 };

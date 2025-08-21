@@ -123,7 +123,7 @@ export class FrameworkDetector {
     // Enhanced detection using broader node analysis
     const allNames = this.allNodeNames.join(' ').toLowerCase();
     const reactKeywords = ['react', 'fiber', 'reactdom', 'jsx', 'createelement'];
-    
+
     // Count occurrences across ALL nodes, not just checking for presence
     const reactOccurrences = reactKeywords.reduce((count, keyword) => {
       const matches = (allNames.match(new RegExp(keyword, 'g')) || []).length;
@@ -187,6 +187,16 @@ export class FrameworkDetector {
     if (reactLikeObjects.length > 0) {
       confidence += 0.15;
       indicators.push(`Large React-related objects found (${reactLikeObjects.length})`);
+    }
+
+    // --- Structural React Fiber detection ---
+    const fiberLikeNodes = this.nodes.filter(n =>
+      n && typeof n === 'object' && n !== null &&
+      ['child', 'sibling', 'return', 'tag'].every(k => k in n)
+    );
+    if (fiberLikeNodes.length > 50) { // Threshold can be tuned
+      confidence += 0.4;
+      indicators.push(`Detected ${fiberLikeNodes.length} React Fiber-like nodes (structural match)`);
     }
 
     // Try to detect version

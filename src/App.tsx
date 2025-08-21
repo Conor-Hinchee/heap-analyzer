@@ -153,6 +153,7 @@ export const App: React.FC = () => {
         onExit: handleExit,
         isRescanning: isRescanning,
         onGenerateReport: handleGenerateReport, // Add report generation handler
+        isGeneratingReport: isGeneratingReport,
       });
 
     case "analyze":
@@ -174,6 +175,10 @@ export const App: React.FC = () => {
       return React.createElement(ReportGeneration, {
         snapshotName: reportSnapshotName,
         onBack: () => setCurrentStep("ready"),
+        onCancel: () => {
+          setIsGeneratingReport(false);
+          setCurrentStep("ready");
+        },
       });
 
     case "reportCompletion":

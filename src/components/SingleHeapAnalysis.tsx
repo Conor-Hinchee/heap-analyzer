@@ -21,6 +21,14 @@ export const SingleHeapAnalysis: React.FC<SingleHeapAnalysisProps> = ({
   const [traceResults, setTraceResults] = React.useState<TraceResult[]>([]);
   const { topRetainers, summary } = analysisResult;
 
+  // Key leak types for summary
+  const keyLeakTypes = [
+    { label: "Detached DOM nodes", keywords: ["detached", "dom"] },
+    { label: "Unmounted React", keywords: ["unmounted", "fiber"] },
+    { label: "Orphaned closures", keywords: ["closure"] },
+    { label: "Leaked listeners", keywords: ["listener", "event"] },
+  ];
+
   // Initialize tracer if snapshot data is available
   React.useEffect(() => {
     if (snapshotData && topRetainers.length > 0) {
@@ -51,6 +59,42 @@ export const SingleHeapAnalysis: React.FC<SingleHeapAnalysisProps> = ({
     }
   });
 
+  // --- Immediate Attention Section ---
+  let immediateLines: string[] = [];
+  if (traceResults.length > 0) {
+    for (const leakType of keyLeakTypes) {
+      const count = traceResults.filter(
+        (tr, idx) =>
+          tr &&
+          tr.isLikelyLeak &&
+          leakType.keywords.some((k) =>
+            (topRetainers[idx].category || "").toLowerCase().includes(k)
+          )
+      ).length;
+      if (count > 0) {
+        immediateLines.push(`- ${count} ${leakType.label} retained`);
+      }
+    }
+  }
+
+  // --- Key Leak Type Table ---
+  let leakTypeTable: string[][] = [];
+  if (traceResults.length > 0) {
+    for (const leakType of keyLeakTypes) {
+      const count = traceResults.filter(
+        (tr, idx) =>
+          tr &&
+          tr.isLikelyLeak &&
+          leakType.keywords.some((k) =>
+            (topRetainers[idx].category || "").toLowerCase().includes(k)
+          )
+      ).length;
+      if (count > 0) {
+        leakTypeTable.push([leakType.label, String(count)]);
+      }
+    }
+  }
+
   const currentRetainer = topRetainers[currentPage];
   const currentTrace = traceResults[currentPage];
 
@@ -64,6 +108,36 @@ export const SingleHeapAnalysis: React.FC<SingleHeapAnalysisProps> = ({
           {currentPage + 1} of {topRetainers.length}
         </Text>
       </Box>
+
+      {/* Immediate Attention Section */}
+      {immediateLines.length > 0 && (
+        <Box flexDirection="column" marginBottom={1}>
+          <Text color="red" bold>
+            🔴 IMMEDIATE ATTENTION
+          </Text>
+          {immediateLines.map((line, idx) => (
+            <Text key={idx} color="red">
+              {line}
+            </Text>
+          ))}
+        </Box>
+      )}
+
+      {/* Key Leak Type Table */}
+      {leakTypeTable.length > 0 && (
+        <Box flexDirection="column" marginBottom={1}>
+          <Text color="cyan" bold>
+            🧠 LEAK TYPE SUMMARY
+          </Text>
+          <Text>{`| Type                | Count |`}</Text>
+          <Text>{`|---------------------|-------|`}</Text>
+          {leakTypeTable.map(([type, count], idx) => (
+            <Text key={type + idx}>{`| ${type.padEnd(20)} | ${count.padEnd(
+              5
+            )} |`}</Text>
+          ))}
+        </Box>
+      )}
 
       <Box flexDirection="column" marginBottom={1}>
         <Text color="cyan" bold>
@@ -198,12 +272,20 @@ export const SingleHeapAnalysis: React.FC<SingleHeapAnalysisProps> = ({
 
       <Newline />
 
+      {/* Manual Debug Checklist */}
       <Box
         flexDirection="column"
         borderStyle="single"
         borderTop={true}
         paddingTop={1}
       >
+        <Text color="yellow" bold>
+          ✅ MANUAL DEBUG CHECKLIST
+        </Text>
+        <Text color="gray">- [ ] Review all detached DOM nodes</Text>
+        <Text color="gray">- [ ] Check for unmounted React components</Text>
+        <Text color="gray">- [ ] Investigate large arrays/maps</Text>
+        <Newline />
         <Box flexDirection="row" justifyContent="space-between">
           <Box flexDirection="row" gap={4}>
             {currentPage > 0 && <Text color="blue">[P] Previous</Text>}

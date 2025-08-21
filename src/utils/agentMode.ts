@@ -298,73 +298,15 @@ function displayAgentReport(report: AgentAnalysisReport): void {
     critical: '🔴'
   };
 
+  // --- Summary Section (now at the very top) ---
   console.log('📋 AGENT ANALYSIS REPORT');
-  console.log('=' .repeat(50));
+  console.log('='.repeat(50));
   console.log(`${severityEmoji[report.severity]} Severity: ${report.severity.toUpperCase()}`);
   console.log(`📅 Timestamp: ${new Date(report.timestamp).toLocaleString()}`);
   console.log(`📁 Snapshot: ${path.basename(report.snapshotPath)}`);
-  
-  // Show leak detection results if available
-  if (report.traceResults) {
-    console.log(`🧠 Leak Detection: ${report.traceResults.totalLikelyLeaks} likely leaks found (${report.traceResults.highConfidenceLeaks} high confidence)`);
-  }
-  
-  // Show framework detection results if available
-  if (report.frameworkInfo?.primary) {
-    console.log(`🎯 Framework: ${report.frameworkInfo.primary.name} (${(report.frameworkInfo.primary.confidence * 100).toFixed(0)}% confidence)`);
-  }
-  
-  console.log('');
-
-  // Key Insights
-  console.log('🔍 WHAT WE FOUND:');
-  report.insights.forEach((insight, index) => {
-    console.log(`  ${insight}`);
-  });
-
-  // Top Memory Consumers
-  console.log('\n🏆 BIGGEST MEMORY HOGS:');
-  report.analysis.topRetainers.slice(0, 5).forEach((retainer, index) => {
-    const sizeInKB = (retainer.node.selfSize / 1024).toFixed(1);
-    const sizeInMB = (retainer.node.selfSize / (1024 * 1024)).toFixed(2);
-    const displayName = retainer.node.name || retainer.node.type || 'Unknown';
-    const size = retainer.node.selfSize > 1024 * 1024 ? `${sizeInMB}MB` : `${sizeInKB}KB`;
-    
-    // Use tracer results for smarter labeling if available
-    let status = '';
-    if (report.traceResults) {
-      // Find the corresponding trace result based on the tracer analysis
-      const hasLikelyLeaks = report.traceResults.totalLikelyLeaks > 0;
-      const isLargeString = displayName.includes('ExternalStringData') && retainer.node.selfSize > 1024 * 1024;
-      
-      if (hasLikelyLeaks && isLargeString && index < 2) {
-        // First few large strings when leaks are detected
-        status = ' - probable leak (monitor)';
-      } else if (isLargeString) {
-        // Other large strings
-        status = ' - likely normal (library/framework)';
-      }
-    } else if (displayName.includes('ExternalStringData')) {
-      // Fallback to old behavior if no tracer results
-      status = ' - investigate source';
-    }
-    
-    if (displayName.includes('ExternalStringData')) {
-      console.log(`  ${index + 1}. 📝 String data consuming ${size}${status}`);
-    } else {
-      console.log(`  ${index + 1}. ${retainer.emoji} ${displayName} - ${size} (${retainer.category})`);
-    }
-  });
-
-  // Recommendations
-  console.log('\n� WHAT TO DO ABOUT IT:');
-  report.recommendations.forEach((rec, index) => {
-    console.log(`  ${rec}`);
-  });
-
-  // Memory Summary
+  // --- Memory Summary ---
   const totalMB = (report.analysis.summary.totalRetainedSize / (1024 * 1024)).toFixed(2);
-  console.log(`\n📊 MEMORY SUMMARY:`);
+  console.log(`📊 MEMORY SUMMARY:`);
   console.log(`  • Total Objects: ${report.analysis.summary.totalObjects.toLocaleString()}`);
   console.log(`  • Total Memory: ${totalMB}MB`);
   if (report.traceResults) {
@@ -373,54 +315,100 @@ function displayAgentReport(report: AgentAnalysisReport): void {
   }
   console.log(`  • Categories: ${Object.keys(report.analysis.summary.categories).length}`);
 
-  // Framework Summary
-  if (report.frameworkInfo?.primary) {
-    console.log('\n🎯 FRAMEWORK DETAILS:');
-    console.log(`  • Primary: ${report.frameworkInfo.primary.name} ${report.frameworkInfo.primary.version || ''}`);
-    console.log(`  • Memory Pattern: ${report.frameworkInfo.primary.memoryPattern}`);
-    
-    if (report.frameworkInfo.buildTools.length > 0) {
-      console.log(`  • Build Tools: ${report.frameworkInfo.buildTools.join(', ')}`);
+  // --- Immediate Attention Section ---
+  const keyLeakTypes = [
+    { label: 'Detached DOM nodes', category: 'dom', keywords: ['detached', 'dom'] },
+    { label: 'Unmounted React', category: 'react', keywords: ['unmounted', 'fiber'] },
+    { label: 'Orphaned closures', category: 'closure', keywords: ['closure'] },
+    { label: 'Leaked listeners', category: 'event_listener', keywords: ['listener', 'event'] },
+  ];
+  let immediateLines = [];
+  if (report.traceResults && report.traceResults.leakCategories) {
+    for (const leakType of keyLeakTypes) {
+      const count = Object.entries(report.traceResults.leakCategories)
+        .filter(([cat]) => leakType.keywords.some(k => cat.toLowerCase().includes(k))).reduce((sum, [, c]) => sum + c, 0);
+      if (count > 0) {
+        immediateLines.push(`- ${count} ${leakType.label} retained`);
+      }
     }
-    
-    if (report.frameworkInfo.libraries.length > 0) {
-      console.log(`  • Libraries: ${report.frameworkInfo.libraries.join(', ')}`);
+  }
+  if (immediateLines.length > 0) {
+    console.log('\n🔴 IMMEDIATE ATTENTION');
+    immediateLines.forEach(line => console.log(line));
+  }
+
+  // --- Key Leak Type Table ---
+  if (report.traceResults && report.traceResults.leakCategories && Object.keys(report.traceResults.leakCategories).length > 0) {
+    console.log('\n🧠 LEAK TYPE SUMMARY');
+    console.log('| Type                | Count |');
+    console.log('|---------------------|-------|');
+    for (const leakType of keyLeakTypes) {
+      const count = Object.entries(report.traceResults.leakCategories)
+        .filter(([cat]) => leakType.keywords.some(k => cat.toLowerCase().includes(k))).reduce((sum, [, c]) => sum + c, 0);
+      if (count > 0) {
+        console.log(`| ${leakType.label.padEnd(20)} | ${String(count).padEnd(5)} |`);
+      }
     }
-    
-    if (report.frameworkInfo.totalFrameworkMemory > 0) {
-      const frameworkMB = (report.frameworkInfo.totalFrameworkMemory / (1024 * 1024)).toFixed(1);
-      console.log(`  • Framework Memory: ${frameworkMB}MB`);
+    // Show other categories
+    for (const [cat, count] of Object.entries(report.traceResults.leakCategories)) {
+      if (!keyLeakTypes.some(t => t.keywords.some(k => cat.toLowerCase().includes(k)))) {
+        console.log(`| ${cat.padEnd(20)} | ${String(count).padEnd(5)} |`);
+      }
     }
   }
 
-  // Distributed Analysis Summary
-  if (report.distributedAnalysis && report.distributedAnalysis.suspiciousPatterns.length > 0) {
-    console.log('\n🔍 DISTRIBUTED LEAK PATTERNS:');
-    report.distributedAnalysis.suspiciousPatterns.forEach((pattern, index) => {
-      const severityIcon = pattern.severity === 'high' ? '🚨' : pattern.severity === 'medium' ? '⚠️' : 'ℹ️';
-      console.log(`  ${severityIcon} ${pattern.type.replace(/_/g, ' ').toUpperCase()}: ${pattern.description}`);
+  // --- Key Insights ---
+  console.log('\n🔍 WHAT WE FOUND:');
+  report.insights.forEach((insight, index) => {
+    console.log(`  ${insight}`);
+  });
+
+  // --- Top Memory Consumers ---
+  console.log('\n🏆 BIGGEST MEMORY HOGS:');
+  report.analysis.topRetainers.slice(0, 5).forEach((retainer, index) => {
+    const sizeInKB = (retainer.node.selfSize / 1024).toFixed(1);
+    const sizeInMB = (retainer.node.selfSize / (1024 * 1024)).toFixed(2);
+    const displayName = retainer.node.name || retainer.node.type || 'Unknown';
+    const size = retainer.node.selfSize > 1024 * 1024 ? `${sizeInMB}MB` : `${sizeInKB}KB`;
+    let status = '';
+    if (report.traceResults) {
+      const hasLikelyLeaks = report.traceResults.totalLikelyLeaks > 0;
+      const isLargeString = displayName.includes('ExternalStringData') && retainer.node.selfSize > 1024 * 1024;
+      if (hasLikelyLeaks && isLargeString && index < 2) {
+        status = ' - probable leak (monitor)';
+      } else if (isLargeString) {
+        status = ' - likely normal (library/framework)';
+      }
+    } else if (displayName.includes('ExternalStringData')) {
+      status = ' - investigate source';
+    }
+    if (displayName.includes('ExternalStringData')) {
+      console.log(`  ${index + 1}. 📝 String data consuming ${size}${status}`);
+    } else {
+      console.log(`  ${index + 1}. ${retainer.emoji} ${displayName} - ${size} (${retainer.category})`);
+    }
+  });
+
+  // --- Recommendations (grouped/prioritized) ---
+  console.log('\n🛠️ RECOMMENDATIONS:');
+  if (report.recommendations && report.recommendations.length > 0) {
+    report.recommendations.forEach((rec, index) => {
+      console.log(`  ${index + 1}. ${rec}`);
     });
-
-    const { timerRelatedMemory, closureMemory, arrayMemory, fragmentedMemory } = report.distributedAnalysis.distributedMemory;
-    const totalDistributedMB = ((timerRelatedMemory + closureMemory + arrayMemory + fragmentedMemory) / (1024 * 1024));
-    
-    if (totalDistributedMB > 1) {
-      console.log('\n📊 DISTRIBUTED MEMORY BREAKDOWN:');
-      if (timerRelatedMemory > 0) console.log(`  • Timer Objects: ${(timerRelatedMemory / (1024 * 1024)).toFixed(1)}MB`);
-      if (closureMemory > 0) console.log(`  • Closure Objects: ${(closureMemory / (1024 * 1024)).toFixed(1)}MB`);
-      if (arrayMemory > 0) console.log(`  • Array Objects: ${(arrayMemory / (1024 * 1024)).toFixed(1)}MB`);
-      if (fragmentedMemory > 0) console.log(`  • Fragmented Memory: ${(fragmentedMemory / (1024 * 1024)).toFixed(1)}MB`);
-      console.log(`  • Total Distributed: ${totalDistributedMB.toFixed(1)}MB`);
-    }
   }
 
-  // Leak Categories Summary
-  if (report.traceResults && Object.keys(report.traceResults.leakCategories).length > 0) {
-    console.log('\n🏷️  LEAK BREAKDOWN BY TYPE:');
-    Object.entries(report.traceResults.leakCategories).forEach(([category, count]) => {
-      console.log(`  • ${category}: ${count} leak${count > 1 ? 's' : ''}`);
-    });
-  }
+  // --- Retainer Paths for Major Leaks (if available) ---
+  // (Placeholder: actual retainer path extraction would require more data)
+  // Example output:
+  // console.log('\n📋 RETAINER PATHS');
+  // console.log('  - DetachedDiv: window → App → DetachedDiv');
+  // console.log('  - FiberNode: window → REACT_DEVTOOLS_GLOBAL_HOOK → FiberNode');
+
+  // --- Manual Debug Checklist ---
+  console.log('\n✅ MANUAL DEBUG CHECKLIST');
+  console.log('  - [ ] Review all detached DOM nodes');
+  console.log('  - [ ] Check for unmounted React components');
+  console.log('  - [ ] Investigate large arrays/maps');
 }
 
 function saveReportToFile(report: AgentAnalysisReport, asMarkdown: boolean = false): string {
@@ -510,19 +498,44 @@ function analyzeDistributedLeakPatterns(tracer: RetainerTracer, allNodes: any[])
     return type.includes('closure') || name.includes('Function') || name.includes('Closure');
   });
 
-  if (closureNodes.length > 50) {
-    const totalClosureMemory = closureNodes.reduce((sum, node) => sum + (node.selfSize || 0), 0);
-    distributedMemory.closureMemory = totalClosureMemory;
-    
-    const largeClosure = closureNodes.filter(node => (node.selfSize || 0) > 50 * 1024);
-    if (largeClosure.length > 10) {
-      suspiciousPatterns.push({
-        type: 'closure_accumulation',
-        description: `${largeClosure.length} large closures found (${(totalClosureMemory / (1024 * 1024)).toFixed(1)}MB total)`,
-        severity: 'high',
-        recommendation: 'Review closures capturing large variables. Use useCallback/useMemo to prevent recreation. Consider WeakRef for large captured data.'
-      });
-    }
+  // Always report closure stats
+  const totalClosureMemory = closureNodes.reduce((sum, node) => sum + (node.selfSize || 0), 0);
+  distributedMemory.closureMemory = totalClosureMemory;
+
+  // Lower threshold for reporting
+  if (closureNodes.length > 10) {
+    suspiciousPatterns.push({
+      type: 'closure_accumulation',
+      description: `${closureNodes.length} closures found (${(totalClosureMemory / (1024 * 1024)).toFixed(1)}MB total)`,
+      severity: closureNodes.length > 50 ? 'high' : 'medium',
+      recommendation: 'Review closures capturing large variables. Use useCallback/useMemo to prevent recreation. Consider WeakRef for large captured data.'
+    });
+  }
+
+  // List largest closures for surfacing
+  const largestClosures = closureNodes
+    .filter(node => node.selfSize > 10 * 1024)
+    .sort((a, b) => (b.selfSize || 0) - (a.selfSize || 0))
+    .slice(0, 5);
+
+  // Attach to distributedMemory for reporting
+  (distributedMemory as any).largestClosures = largestClosures;
+  // --- Closure surfacing: always show closure stats ---
+  if (distributedAnalysis && distributedAnalysis.distributedMemory.closureMemory > 0) {
+    const closureCount = (analysis.topRetainers || []).filter((r: any) => {
+      const t = r.node.type || '';
+      const n = r.node.name || '';
+      return t.includes('closure') || n.includes('Function') || n.includes('Closure');
+    }).length;
+    insights.push(`🧩 Closures: ${closureCount} closures, ${(distributedAnalysis.distributedMemory.closureMemory / (1024 * 1024)).toFixed(2)}MB total`);
+  }
+
+  // --- List largest closures ---
+  if (distributedAnalysis && (distributedAnalysis.distributedMemory as any).largestClosures?.length) {
+    insights.push('🔎 Largest closures:');
+    (distributedAnalysis.distributedMemory as any).largestClosures.forEach((node: any, idx: number) => {
+      insights.push(`   ${idx + 1}. ${node.name || node.type} - ${(node.selfSize / 1024).toFixed(1)} KB`);
+    });
   }
 
   // Analyze array accumulation patterns
