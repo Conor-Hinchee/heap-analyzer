@@ -41,23 +41,6 @@ export interface DOMLeakSummary {
   }>;
 }
 
-export interface AnalysisResult {
-  topRetainers: RetainerResult[];
-  detachedDOMNodes: DetachedDOMNode[];
-  domLeakSummary: DOMLeakSummary;
-  summary: {
-    totalObjects: number;
-    totalRetainedSize: number;
-    categories: Record<string, number>;
-  };
-  // Legacy properties for backward compatibility
-  leaks?: {
-    type: string;
-    description: string;
-    suggestions: string[];
-  }[];
-}
-
 export type AppStep = 
   | 'welcome' 
   | 'checkDirectory' 
@@ -66,7 +49,6 @@ export type AppStep =
   | 'guideSnapshot'
   | 'ready' 
   | 'analyze'
-  | 'singleAnalysis'
   | 'snapshotInfo'
   | 'reportGeneration'
   | 'reportCompletion'

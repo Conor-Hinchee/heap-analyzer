@@ -3,10 +3,9 @@ import { Text } from "ink";
 import { AppStep } from "./types/index.js";
 import { Welcome } from "./components/Welcome.js";
 import { DirectoryCheck } from "./components/DirectoryCheck.js";
-import { SnapshotPrompt } from "./components/SnapshotPrompt.js";
-import { Analysis } from "./components/Analysis.js";
-import { SnapshotGuide } from "./components/SnapshotGuide.js";
-import { SingleHeapAnalysis } from "./components/SingleHeapAnalysis.js";
+import { BeforeAfterPrompt } from "./components/BeforeAfterPrompt.js";
+import { BeforeAfterGuide } from "./components/BeforeAfterGuide.js";
+import { BeforeAfterReport } from "./components/BeforeAfterReport.js";
 import { SnapshotInfo } from "./components/SnapshotInfo.js";
 import { ReportGeneration } from "./components/ReportGeneration.js";
 import { ReportCompletion } from "./components/ReportCompletion.js";
@@ -15,24 +14,23 @@ import {
   createSnapshotDirectory,
   getSnapshotFiles,
 } from "./utils/fileHelpers.js";
-import { analyzeHeapSnapshot, AnalysisResult } from "./utils/heapAnalyzer.js";
+import {
+  BeforeAfterAnalyzer,
+  ComparisonResult,
+} from "./utils/beforeAfterAnalyzer.js";
 import { runAgentMode } from "./utils/agentMode.js";
 
 export const App: React.FC = () => {
   const [currentStep, setCurrentStep] = React.useState<AppStep>("welcome");
   const [snapshotFiles, setSnapshotFiles] = React.useState<any[]>([]);
   const [isRescanning, setIsRescanning] = React.useState(false);
-  const [singleAnalysisResult, setSingleAnalysisResult] =
-    React.useState<AnalysisResult | null>(null);
-  const [currentSnapshotName, setCurrentSnapshotName] =
-    React.useState<string>("");
-  const [currentSnapshotData, setCurrentSnapshotData] =
-    React.useState<any>(null);
   const [isGeneratingReport, setIsGeneratingReport] = React.useState(false);
   const [reportSnapshotName, setReportSnapshotName] =
     React.useState<string>("");
   const [generatedReportPath, setGeneratedReportPath] =
     React.useState<string>("");
+  const [comparisonResult, setComparisonResult] =
+    React.useState<ComparisonResult | null>(null);
 
   React.useEffect(() => {
     if (currentStep === "checkDirectory") {
@@ -83,43 +81,38 @@ export const App: React.FC = () => {
     setCurrentStep("ready");
   };
 
-  const handleSingleAnalysis = async (filename: string) => {
+  const handleBeforeAfterAnalysis = async () => {
     try {
-      setCurrentSnapshotName(filename);
-      setCurrentStep("singleAnalysis");
-      const filePath = `./snapshots/${filename}`;
+      setCurrentStep("analyze");
 
-      // Read raw snapshot data for tracer
+      // Check if we have both required snapshots
+      const beforePath = "./snapshots/before.heapsnapshot";
+      const afterPath = "./snapshots/after.heapsnapshot";
+
+      // Load both snapshots
       const fs = await import("fs");
-      const rawData = fs.readFileSync(filePath, "utf8");
-      const snapshotData = JSON.parse(rawData);
-      setCurrentSnapshotData(snapshotData);
 
-      const result = await analyzeHeapSnapshot(filePath);
-      setSingleAnalysisResult(result);
+      if (!fs.existsSync(beforePath)) {
+        throw new Error("before.heapsnapshot not found");
+      }
+      if (!fs.existsSync(afterPath)) {
+        throw new Error("after.heapsnapshot not found");
+      }
+
+      const beforeRawData = fs.readFileSync(beforePath, "utf8");
+      const afterRawData = fs.readFileSync(afterPath, "utf8");
+
+      const beforeSnapshot = JSON.parse(beforeRawData);
+      const afterSnapshot = JSON.parse(afterRawData);
+
+      // Perform before/after comparison
+      const analyzer = new BeforeAfterAnalyzer(beforeSnapshot, afterSnapshot);
+      const result = await analyzer.analyze();
+
+      setComparisonResult(result);
+      setCurrentStep("results");
     } catch (error) {
-      console.error("Failed to analyze heap snapshot:", error);
-      // Could add error state here
-      setCurrentStep("ready");
-    }
-  };
-  const handleGenerateReport = async (filename: string) => {
-    try {
-      setReportSnapshotName(filename);
-      setCurrentStep("reportGeneration");
-      setIsGeneratingReport(true);
-      const filePath = `./snapshots/${filename}`;
-
-      // Run agent mode analysis to generate markdown report
-      const reportPath = await runAgentMode(filePath, { markdownOutput: true });
-
-      setIsGeneratingReport(false);
-      setGeneratedReportPath(reportPath);
-      // Go to completion screen instead of back to menu
-      setCurrentStep("reportCompletion");
-    } catch (error) {
-      console.error("Failed to generate markdown report:", error);
-      setIsGeneratingReport(false);
+      console.error("Failed to analyze heap snapshots:", error);
       setCurrentStep("ready");
     }
   };
@@ -137,39 +130,40 @@ export const App: React.FC = () => {
       });
 
     case "guideSnapshot":
-      return React.createElement(SnapshotGuide, {
+      return React.createElement(BeforeAfterGuide, {
         onContinue: handleSnapshotGuideComplete,
         onSkip: handleSnapshotGuideComplete,
       });
 
     case "ready":
-      return React.createElement(SnapshotPrompt, {
+      return React.createElement(BeforeAfterPrompt, {
         snapshotCount: snapshotFiles.length,
         snapshotFiles: snapshotFiles,
-        onAnalyze: () => setCurrentStep("analyze"),
-        onSingleAnalysis: handleSingleAnalysis,
+        onAnalyze: handleBeforeAfterAnalysis,
         onView: () => setCurrentStep("snapshotInfo"),
         onRescan: handleRescanSnapshots,
         onExit: handleExit,
         isRescanning: isRescanning,
-        onGenerateReport: handleGenerateReport, // Add report generation handler
-        isGeneratingReport: isGeneratingReport,
       });
 
     case "analyze":
-      return React.createElement(Analysis, { isLoading: true });
-
-    case "singleAnalysis":
-      if (singleAnalysisResult) {
-        return React.createElement(SingleHeapAnalysis, {
-          analysisResult: singleAnalysisResult,
-          snapshotName: currentSnapshotName,
-          snapshotData: currentSnapshotData,
-          onBack: () => setCurrentStep("ready"),
-        });
-      } else {
-        return React.createElement(Analysis, { isLoading: true });
-      }
+      return React.createElement("div", {}, [
+        React.createElement(
+          Text,
+          { key: "title", color: "cyan" },
+          "🔍 Analyzing snapshots for memory leaks..."
+        ),
+        React.createElement(
+          Text,
+          { key: "subtitle", color: "gray" },
+          "Comparing before.heapsnapshot with after.heapsnapshot"
+        ),
+        React.createElement(
+          Text,
+          { key: "wait", color: "yellow" },
+          "This may take a few moments..."
+        ),
+      ]);
 
     case "reportGeneration":
       return React.createElement(ReportGeneration, {
@@ -183,7 +177,7 @@ export const App: React.FC = () => {
 
     case "reportCompletion":
       return React.createElement(ReportCompletion, {
-        snapshotName: reportSnapshotName,
+        snapshotName: "before.heapsnapshot → after.heapsnapshot",
         reportPath: generatedReportPath,
         onBackToMenu: () => setCurrentStep("ready"),
       });
@@ -193,6 +187,23 @@ export const App: React.FC = () => {
         snapshotFiles: snapshotFiles,
         onBack: () => setCurrentStep("ready"),
       });
+
+    case "results":
+      if (comparisonResult) {
+        return React.createElement(BeforeAfterReport, {
+          result: comparisonResult,
+          onRestart: () => {
+            setComparisonResult(null);
+            setCurrentStep("ready");
+          },
+        });
+      } else {
+        return React.createElement(
+          Text,
+          { color: "red" },
+          "No comparison results available"
+        );
+      }
 
     default:
       return React.createElement(Text, null, "Loading...");

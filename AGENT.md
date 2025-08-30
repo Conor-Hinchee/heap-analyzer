@@ -5,61 +5,94 @@
 ## 🚀 Quick Analysis
 
 ### Analyze Default Snapshot
+
 ```bash
 npx heap-analyzer --agent
 ```
-*Analyzes `./snapshots/single.heapsnapshot` automatically*
+
+_Analyzes `./snapshots/after.heapsnapshot` automatically, or compares before/after snapshots if both exist_
 
 ### Analyze Specific File
+
 ```bash
 npx heap-analyzer --agent path/to/your-snapshot.heapsnapshot
 ```
 
 ### Continuous Monitoring
+
 ```bash
 npx heap-analyzer --watch ./snapshots
 ```
-*Auto-analyzes new `.heapsnapshot` files as they're created*
+
+_Auto-analyzes new `.heapsnapshot` files as they're created_
 
 ## 📊 What You Get
 
 ### Instant Analysis Report
+
 - **🔴 Severity Assessment**: LOW, MEDIUM, HIGH, or CRITICAL
 - **🧠 Smart Leak Detection**: AI-powered confidence scoring
 - **🎯 Framework Detection**: React, Vue, Angular, Next.js recognition
 - **💡 Actionable Fixes**: Specific debugging steps and code changes
 
-### Example Output
+### Example Analysis Results
+
+When you run the agent, you get immediate insights like:
+
+- **🟠 Severity: HIGH** - Clear risk assessment
+- **Timer Activity**: 45 timer references detected (potential uncleared intervals)
+- **Event Listeners**: 1202 references (possible unremoved listeners)
+- **Memory Growth**: Before: 9.88MB → After: 11.66MB (1.78MB increase)
+- **Object Count**: Before: 127,700 → After: 145,068 objects (+17,368 new objects)
+
+The tool automatically detects:
+
+- Memory leaks and their confidence levels
+- Framework usage (React, Vue, Angular, etc.)
+- Specific memory hotspots and their categories
+- Actionable recommendations for fixes
+
+## � Before/After Comparison Analysis
+
+### Dual Snapshot Detection
+
+When you have both `before.heapsnapshot` and `after.heapsnapshot` in your snapshots directory:
+
+```bash
+npx heap-analyzer --agent
 ```
-🤖 Running Heap Analyzer in Agent Mode...
 
-📋 AGENT ANALYSIS REPORT
-==================================================
-🟠 Severity: HIGH
-📅 Timestamp: 7/6/2025, 3:04:51 PM
-📁 Snapshot: single.heapsnapshot
-🧠 Leak Detection: 0 likely leaks found (0 high confidence)
+_Automatically detects and compares both snapshots for memory growth analysis_
 
-🔍 WHAT WE FOUND:
-  🚨 HIGH timer activity: 71 timer references (possible uncleared intervals)
-  🚨 HIGH event listener activity: 1197 references (possible unremoved listeners)
-  💾 Total memory footprint: 60.45MB across 1,333,036 objects
+### Interactive Comparison Mode
 
-💡 WHAT TO DO ABOUT IT:
-  🚨 Clear all timers: Check for uncleared setInterval/setTimeout calls
-  🚨 Remove event listeners: Check for unremoved event listeners
-  📊 High memory usage but no clear leaks detected
+For detailed before/after analysis with guided workflow:
+
+```bash
+npx heap-analyzer
 ```
 
-## 🔍 Advanced Features
+_Choose option [1] to analyze memory leaks with step-by-step comparison_
+
+### What Dual Analysis Reveals
+
+- **Memory Growth**: Exact size differences between snapshots
+- **New Objects**: Objects that appeared between snapshots
+- **Grown Objects**: Existing objects that increased in size
+- **Leak Patterns**: Timer, event listener, and DOM retention issues
+- **Root Cause Analysis**: Specific objects and references causing growth
+
+## �🔍 Advanced Features
 
 ### JSON Reports for CI/CD
+
 ```bash
 npx heap-analyzer --agent
 # Creates: ./reports/heap-analysis-TIMESTAMP.json
 ```
 
 ### Watch Mode for Development
+
 ```bash
 # Monitor directory for new snapshots
 npx heap-analyzer --watch ./my-snapshots
@@ -70,33 +103,51 @@ npx heap-analyzer --watch
 
 ## 📁 Heap Snapshot Creation
 
+### Recommended File Naming
+
+For single snapshot analysis:
+
+- `after.heapsnapshot` - Default file the agent looks for
+- `my-app.heapsnapshot` - Any descriptive name ending in `.heapsnapshot`
+
+For before/after comparison:
+
+- `before.heapsnapshot` - Initial state snapshot
+- `after.heapsnapshot` - Post-action state snapshot
+
+_Place both files in `./snapshots/` directory for automatic detection_
+
 ### Chrome DevTools Method
+
 1. Open DevTools (`F12`)
 2. Go to **Memory** tab
 3. Select **"Heap snapshot"**
 4. Click **"Take snapshot"**
-5. Save as `.heapsnapshot` file
+5. Save as `.heapsnapshot` file with appropriate name
 
 ### Programmatic Creation (Node.js)
+
 ```javascript
-const v8 = require('v8');
-const fs = require('fs');
+const v8 = require("v8");
+const fs = require("fs");
 
 // Take snapshot
-const snapshot = v8.writeHeapSnapshot('./my-app.heapsnapshot');
-console.log('Snapshot saved:', snapshot);
+const snapshot = v8.writeHeapSnapshot("./my-app.heapsnapshot");
+console.log("Snapshot saved:", snapshot);
 ```
 
 ### Browser Automation
+
 ```javascript
 // Puppeteer example
 const client = await page.target().createCDPSession();
-await client.send('HeapProfiler.takeHeapSnapshot');
+await client.send("HeapProfiler.takeHeapSnapshot");
 ```
 
 ## 🎯 Leak Detection Categories
 
 ### Timer/Interval Leaks
+
 ```
 🚨 Timer/Interval leak detected (1.2MB)
 • Clear intervals with clearInterval() in cleanup
@@ -105,6 +156,7 @@ await client.send('HeapProfiler.takeHeapSnapshot');
 ```
 
 ### Event Listener Leaks
+
 ```
 🚨 Event listener accumulation detected
 • Remove listeners before DOM removal
@@ -113,6 +165,7 @@ await client.send('HeapProfiler.takeHeapSnapshot');
 ```
 
 ### Closure/Memory Capture
+
 ```
 🚨 Large closure in global scope (800KB)
 • Avoid capturing large objects in timer callbacks
@@ -121,6 +174,7 @@ await client.send('HeapProfiler.takeHeapSnapshot');
 ```
 
 ### DOM Element Retention
+
 ```
 🚨 Detached DOM element (2.1MB)
 • Remove event listeners before DOM removal
@@ -131,20 +185,22 @@ await client.send('HeapProfiler.takeHeapSnapshot');
 ## 📈 CI/CD Integration
 
 ### GitHub Actions
+
 ```yaml
 - name: Memory Leak Analysis
   run: |
     # Generate heap snapshot in your app
     npm run test:memory-snapshot
-    
+
     # Analyze with heap-analyzer
     npx heap-analyzer --agent ./heap-snapshot.heapsnapshot
-    
+
     # Process JSON report
     cat ./reports/heap-analysis-*.json | jq '.severity'
 ```
 
 ### Build Script Integration
+
 ```json
 {
   "scripts": {
@@ -158,11 +214,12 @@ await client.send('HeapProfiler.takeHeapSnapshot');
 ## 🔧 Configuration Options
 
 ### Environment Variables
+
 ```bash
 # Custom snapshot directory
 export HEAP_SNAPSHOTS_DIR="./custom-snapshots"
 
-# Custom reports directory  
+# Custom reports directory
 export HEAP_REPORTS_DIR="./custom-reports"
 
 # Analysis sensitivity (low, medium, high)
@@ -170,6 +227,7 @@ export HEAP_ANALYSIS_SENSITIVITY="high"
 ```
 
 ### Package.json Integration
+
 ```json
 {
   "heap-analyzer": {
@@ -183,6 +241,7 @@ export HEAP_ANALYSIS_SENSITIVITY="high"
 ## 🚨 Common Leak Patterns & Fixes
 
 ### React Component Leaks
+
 ```javascript
 // ❌ BAD: Timer not cleared
 useEffect(() => {
@@ -198,6 +257,7 @@ useEffect(() => {
 ```
 
 ### Event Listener Leaks
+
 ```javascript
 // ❌ BAD: Listener not removed
 componentDidMount() {
@@ -214,6 +274,7 @@ componentWillUnmount() {
 ```
 
 ### Closure Variable Capture
+
 ```javascript
 // ❌ BAD: Capturing large data
 function createTimer(largeDataArray) {
@@ -234,18 +295,21 @@ function createTimer(largeDataArray) {
 ## 📊 Report Analysis
 
 ### Understanding Confidence Scores
+
 - **90-100%**: Almost certain leak - fix immediately
 - **70-89%**: Probable leak - investigate and likely fix
 - **50-69%**: Possible leak - monitor and investigate
 - **<50%**: Low confidence - likely normal usage
 
 ### Memory Size Thresholds
+
 - **>5MB objects**: Investigate immediately
 - **1-5MB objects**: Monitor for growth
 - **100KB-1MB**: Normal range, check for accumulation patterns
 - **<100KB**: Usually not concerning unless many similar objects
 
 ### Framework-Specific Patterns
+
 - **React**: Look for Fiber nodes, uncleared useEffect timers
 - **Vue**: Check for component instance retention, reactive data leaks
 - **Angular**: Monitor for service subscriptions, zone.js timer issues
@@ -276,6 +340,7 @@ npm run clear-reports
 ## 🆘 Troubleshooting
 
 ### No Snapshot Found
+
 ```bash
 # Create snapshots directory
 mkdir -p ./snapshots
@@ -285,6 +350,7 @@ ls -la ./snapshots/
 ```
 
 ### Large Snapshot Files
+
 ```bash
 # Check file size
 ls -lh *.heapsnapshot
@@ -294,6 +360,7 @@ gzip large-snapshot.heapsnapshot
 ```
 
 ### Analysis Timeout
+
 ```bash
 # Reduce snapshot size or increase Node.js memory
 node --max-old-space-size=8192 ./node_modules/.bin/heap-analyzer --agent

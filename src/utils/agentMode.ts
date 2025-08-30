@@ -235,6 +235,18 @@ function generateAgentReport(snapshotPath: string, analysis: AnalysisResult): Ag
   } else {
     insights.push(`💾 Total memory footprint: ${totalMB}MB across ${analysis.summary.totalObjects.toLocaleString()} objects`);
     
+    // Enhanced: Detect suspicious growth patterns
+    const suspiciousGrowthDetected = detectSuspiciousGrowth(analysis, distributedAnalysis);
+    if (suspiciousGrowthDetected.isSuspicious) {
+      if (severity === 'low' || severity === 'medium') {
+        severity = 'high';
+      }
+      
+      insights.push(`🟡 SUSPICIOUS GROWTH: ${suspiciousGrowthDetected.description}`);
+      recommendations.push(`🔍 INVESTIGATE: ${suspiciousGrowthDetected.recommendation}`);
+      recommendations.push(`📊 Manual analysis required: Significant memory growth without clear leak patterns detected`);
+    }
+    
     if (analysis.summary.totalRetainedSize > 50 * 1024 * 1024) { // > 50MB
       if (severity === 'low') severity = 'medium';
       recommendations.push('📊 High memory usage but no clear leaks detected. Monitor for growth trends.');
@@ -520,23 +532,6 @@ function analyzeDistributedLeakPatterns(tracer: RetainerTracer, allNodes: any[])
 
   // Attach to distributedMemory for reporting
   (distributedMemory as any).largestClosures = largestClosures;
-  // --- Closure surfacing: always show closure stats ---
-  if (distributedAnalysis && distributedAnalysis.distributedMemory.closureMemory > 0) {
-    const closureCount = (analysis.topRetainers || []).filter((r: any) => {
-      const t = r.node.type || '';
-      const n = r.node.name || '';
-      return t.includes('closure') || n.includes('Function') || n.includes('Closure');
-    }).length;
-    insights.push(`🧩 Closures: ${closureCount} closures, ${(distributedAnalysis.distributedMemory.closureMemory / (1024 * 1024)).toFixed(2)}MB total`);
-  }
-
-  // --- List largest closures ---
-  if (distributedAnalysis && (distributedAnalysis.distributedMemory as any).largestClosures?.length) {
-    insights.push('🔎 Largest closures:');
-    (distributedAnalysis.distributedMemory as any).largestClosures.forEach((node: any, idx: number) => {
-      insights.push(`   ${idx + 1}. ${node.name || node.type} - ${(node.selfSize / 1024).toFixed(1)} KB`);
-    });
-  }
 
   // Analyze array accumulation patterns
   const arrayNodes = allNodes.filter(node => {
@@ -585,6 +580,233 @@ function analyzeDistributedLeakPatterns(tracer: RetainerTracer, allNodes: any[])
   }
 
   return { suspiciousPatterns, distributedMemory };
+}
+
+/**
+ * Enhanced: Detect suspicious growth patterns
+ * Flags scenarios where there's significant memory growth but no clear leak source
+ */
+function detectSuspiciousGrowth(analysis: AnalysisResult, distributedAnalysis?: AgentAnalysisReport['distributedAnalysis']): {
+  isSuspicious: boolean;
+  description: string;
+  recommendation: string;
+} {
+  const totalObjectCount = analysis.summary.totalObjects;
+  const totalMemoryMB = analysis.summary.totalRetainedSize / (1024 * 1024);
+  
+  // Suspicious growth indicators
+  const hasHighObjectCount = totalObjectCount > 100000; // > 100K objects
+  const hasSignificantMemory = totalMemoryMB > 10; // > 10MB
+  const hasNoLargeLeaks = !analysis.topRetainers?.some(r => r.node.selfSize > 5 * 1024 * 1024); // No objects > 5MB
+  
+  // Check for distributed small object accumulation
+  const smallObjectCount = analysis.topRetainers?.filter(r => 
+    r.node.selfSize > 10 * 1024 && r.node.selfSize < 500 * 1024
+  ).length || 0;
+  
+  const hasDistributedGrowth = smallObjectCount > 15; // Many medium-sized objects
+  
+  // Check for high timer/listener activity without corresponding large objects
+  const hasHighActivity = distributedAnalysis?.suspiciousPatterns?.some(p => 
+    (p.type === 'timer_accumulation' || p.type === 'event_listener_accumulation') && 
+    p.severity === 'high'
+  ) || false;
+  
+  // Determine if this is suspicious
+  const isSuspicious = (
+    (hasHighObjectCount && hasNoLargeLeaks) || 
+    (hasDistributedGrowth && hasSignificantMemory) ||
+    (hasHighActivity && hasSignificantMemory && hasNoLargeLeaks)
+  );
+  
+  if (!isSuspicious) {
+    return { isSuspicious: false, description: '', recommendation: '' };
+  }
+  
+  // Generate description based on pattern
+  let description = '';
+  let recommendation = '';
+  
+  if (hasHighObjectCount && hasNoLargeLeaks) {
+    description = `${(totalObjectCount / 1000).toFixed(0)}K objects (${totalMemoryMB.toFixed(1)}MB) without clear large leak sources`;
+    recommendation = 'Look for closure retention, growing arrays, or accumulated small objects';
+  } else if (hasDistributedGrowth) {
+    description = `${smallObjectCount} medium-sized objects suggest distributed accumulation pattern`;
+    recommendation = 'Check for React component retention, event listener accumulation, or repeated function creation';
+  } else if (hasHighActivity) {
+    description = `High timer/listener activity with unexplained memory growth (${totalMemoryMB.toFixed(1)}MB)`;
+    recommendation = 'Focus on uncleared intervals, retained closures, and component cleanup patterns';
+  }
+  
+  return { isSuspicious: true, description, recommendation };
+}
+
+/**
+ * Enhanced: Analyze closure retention patterns
+ * Focuses on detecting GROWING/ACCUMULATING closures, not just any closures
+ */
+function analyzeClosurePatterns(snapshotData: any, analysis: AnalysisResult): {
+  suspiciousClosures: number;
+  capturedMemory: number;
+} {
+  let suspiciousClosures = 0;
+  let capturedMemory = 0;
+
+  try {
+    if (!snapshotData.nodes || !snapshotData.strings) {
+      return { suspiciousClosures: 0, capturedMemory: 0 };
+    }
+
+    // Look for ACCUMULATION patterns, not just any closures
+    const closureStats: Record<string, { count: number; totalSize: number }> = {};
+    const nodes = snapshotData.nodes;
+    const strings = snapshotData.strings;
+    const nodeFields = snapshotData.snapshot?.meta?.node_fields || [];
+    const nodeTypes = snapshotData.snapshot?.meta?.node_types || [];
+    
+    const typeIndex = nodeFields.indexOf('type');
+    const nameIndex = nodeFields.indexOf('name');
+    const selfSizeIndex = nodeFields.indexOf('self_size');
+    const nodeFieldCount = nodeFields.length;
+
+    // Count identical closures/functions (this indicates accumulation)
+    for (let i = 0; i < nodes.length; i += nodeFieldCount) {
+      const typeValue = nodes[i + typeIndex];
+      const nameValue = nodes[i + nameIndex];
+      const selfSize = nodes[i + selfSizeIndex] || 0;
+
+      // Get type and name strings
+      let typeString = 'unknown';
+      if (nodeTypes[0] && Array.isArray(nodeTypes[0]) && nodeTypes[0][typeValue]) {
+        typeString = nodeTypes[0][typeValue];
+      }
+
+      let nameString = '';
+      if (typeof nameValue === 'number' && strings[nameValue]) {
+        nameString = strings[nameValue];
+      }
+
+      // Focus on closures and functions
+      if (typeString === 'closure' || typeString === 'function' || 
+          nameString.includes('closure') || nameString.includes('Function')) {
+        
+        // Create a signature for this closure type
+        const signature = `${typeString}:${nameString}:${Math.floor(selfSize / 1024)}KB`;
+        
+        if (!closureStats[signature]) {
+          closureStats[signature] = { count: 0, totalSize: 0 };
+        }
+        
+        closureStats[signature].count++;
+        closureStats[signature].totalSize += selfSize;
+      }
+    }
+
+    // Look for REPEATED closure patterns (indicates accumulation)
+    for (const [signature, stats] of Object.entries(closureStats)) {
+      // Flag closures that appear many times (accumulation pattern)
+      if (stats.count > 10) { // 10+ identical closures suggests accumulation
+        suspiciousClosures += stats.count;
+        capturedMemory += stats.totalSize;
+      }
+      
+      // Flag large closure accumulations
+      if (stats.totalSize > 500 * 1024) { // > 500KB of identical closures
+        suspiciousClosures += Math.floor(stats.count / 2);
+        capturedMemory += stats.totalSize;
+      }
+    }
+
+    // Look for growing array patterns (like retainedClosures.current)
+    const growingArrayPatterns = strings.filter((str: string) => 
+      str.includes('.current') || 
+      str.includes('retained') ||
+      str.includes('closures') ||
+      (str.includes('push') && !str.includes('pop')) ||
+      str.includes('bottleClosure') // Your specific pattern!
+    );
+
+    // High count of these patterns suggests accumulation
+    if (growingArrayPatterns.length > 5) {
+      suspiciousClosures += Math.floor(growingArrayPatterns.length / 3);
+    }
+
+  } catch (error) {
+    // Fail silently for this analysis
+  }
+
+  return { suspiciousClosures, capturedMemory };
+}
+
+/**
+ * Enhanced: Analyze growing collection patterns
+ * Detects arrays, Maps, Sets that appear to only grow without cleanup
+ */
+function analyzeGrowingCollections(snapshotData: any, analysis: AnalysisResult): {
+  suspiciousCollections: number;
+  totalSize: number;
+} {
+  let suspiciousCollections = 0;
+  let totalSize = 0;
+
+  try {
+    if (!analysis.topRetainers) {
+      return { suspiciousCollections: 0, totalSize: 0 };
+    }
+
+    // Look for collection-like objects
+    analysis.topRetainers.forEach(retainer => {
+      const name = retainer.node.name?.toLowerCase() || '';
+      const type = retainer.node.type?.toLowerCase() || '';
+      
+      // Patterns that suggest growing collections
+      const isCollection = 
+        type.includes('array') || 
+        type.includes('map') || 
+        type.includes('set') ||
+        name.includes('array') ||
+        name.includes('list') ||
+        name.includes('collection') ||
+        name.includes('cache') ||
+        name.includes('queue') ||
+        name.includes('buffer') ||
+        name.includes('current'); // React useRef.current
+
+      // Large collections are suspicious
+      if (isCollection && retainer.node.selfSize > 10 * 1024) {
+        suspiciousCollections++;
+        totalSize += retainer.node.selfSize;
+      }
+
+      // Special case: React patterns
+      if (name.includes('current') && retainer.node.selfSize > 5 * 1024) {
+        suspiciousCollections++;
+        totalSize += retainer.node.selfSize;
+      }
+    });
+
+    // Additional string analysis for collection patterns
+    if (snapshotData.strings) {
+      const collectionStrings = snapshotData.strings.filter((str: string) => {
+        const lowerStr = str.toLowerCase();
+        return (lowerStr.includes('push') && !lowerStr.includes('pop')) ||
+               (lowerStr.includes('add') && !lowerStr.includes('remove')) ||
+               lowerStr.includes('accumulate') ||
+               lowerStr.includes('collect') ||
+               lowerStr.includes('.current');
+      });
+
+      // Many collection-related strings suggest accumulation patterns
+      if (collectionStrings.length > 20) {
+        suspiciousCollections += Math.floor(collectionStrings.length / 10);
+      }
+    }
+
+  } catch (error) {
+    // Fail silently for this analysis
+  }
+
+  return { suspiciousCollections, totalSize };
 }
 
 /**
@@ -721,6 +943,45 @@ function performDeepLeakAnalysis(snapshotPath: string, analysis: AnalysisResult)
       });
       
       deepInsights.push(`🚨 EXPLICIT LEAK INDICATORS: Found strings containing 'leak', 'accumulate', or 'grow'`);
+    }
+
+    // Enhanced: Check for closure retention patterns
+    const closurePatterns = analyzeClosurePatterns(snapshotData, analysis);
+    if (closurePatterns.suspiciousClosures > 0) {
+      const severity = closurePatterns.suspiciousClosures > 20 ? 'high' : 
+                      closurePatterns.suspiciousClosures > 10 ? 'medium' : 'low';
+      
+      suspiciousPatterns.push({
+        type: 'closure_retention',
+        count: closurePatterns.suspiciousClosures,
+        severity,
+        description: `${closurePatterns.suspiciousClosures} potential closure retention patterns detected`
+      });
+
+      if (severity === 'high') {
+        deepInsights.push(`🚨 HIGH closure retention: ${closurePatterns.suspiciousClosures} retained closures (likely captured large objects)`);
+      } else {
+        deepInsights.push(`⚠️ Closure patterns: ${closurePatterns.suspiciousClosures} potential retained closures detected`);
+      }
+    }
+
+    // Enhanced: Check for growing collection patterns (React useRef arrays, etc.)
+    const collectionPatterns = analyzeGrowingCollections(snapshotData, analysis);
+    if (collectionPatterns.suspiciousCollections > 0) {
+      const severity = collectionPatterns.totalSize > 5 * 1024 * 1024 ? 'high' : 'medium';
+      
+      suspiciousPatterns.push({
+        type: 'growing_collections',
+        count: collectionPatterns.suspiciousCollections,
+        severity,
+        description: `${collectionPatterns.suspiciousCollections} collections that appear to only grow (${(collectionPatterns.totalSize / 1024).toFixed(1)}KB)`
+      });
+
+      if (severity === 'high') {
+        deepInsights.push(`🚨 GROWING COLLECTIONS: ${collectionPatterns.suspiciousCollections} unbounded arrays/maps (${(collectionPatterns.totalSize / 1024 / 1024).toFixed(1)}MB total)`);
+      } else {
+        deepInsights.push(`⚠️ Collection growth: ${collectionPatterns.suspiciousCollections} potentially unbounded collections detected`);
+      }
     }
     
     // Analyze extended retainer list (beyond top 20)

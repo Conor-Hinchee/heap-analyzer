@@ -81,28 +81,23 @@ Agent mode provides automated analysis with:
 
 For detailed markdown report features, see [MARKDOWN_REPORTS.md](./MARKDOWN_REPORTS.md).
 
-### Example Agent Output
+### Agent Analysis Output
 
-```
-🤖 Running Heap Analyzer in Agent Mode...
+Agent mode provides structured analysis including:
 
-📋 AGENT ANALYSIS REPORT
-==================================================
-🟠 Severity: HIGH
-📅 Timestamp: 6/30/2025, 11:07:42 AM
-📁 Snapshot: single.heapsnapshot
+- **Severity Assessment** (LOW, MEDIUM, HIGH, CRITICAL)
+- **Memory Summary** with object counts and total size
+- **Top Memory Consumers** ranked by size with categories
+- **Leak Detection** with confidence scoring
+- **Actionable Recommendations** for specific fixes
+- **Framework Detection** for targeted advice
 
-🔍 KEY INSIGHTS:
-  1. Large memory consumer detected: system / ExternalStringData (1.90MB)
-  2. Total heap size: 9.73MB with 127,468 objects
+Example findings:
 
-🏆 TOP MEMORY CONSUMERS:
-  1. ⚫ system / ExternalStringData - 1944.0KB (OBJECT)
-  2. ⚫ system / ExternalStringData - 1083.6KB (OBJECT)
-
-💡 RECOMMENDATIONS:
-  1. Investigate system / ExternalStringData - consider memory optimization strategies
-```
+- Large memory consumer: ExternalStringData (1.90MB)
+- Event listener accumulation: 1202 references detected
+- Timer activity: 45 timer references (potential leaks)
+- Memory growth: 9.88MB → 11.66MB between snapshots
 
 ## CI/CD Integration
 

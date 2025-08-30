@@ -97,13 +97,18 @@ export const SnapshotInfo: React.FC<SnapshotInfoProps> = ({
 
       <Box borderStyle="single" borderColor="gray" padding={1} marginTop={1}>
         <Text color="magenta">
-          💡 Tips:
+          💡 Memory Leak Detection:
           <Newline />
-          • Run analysis on individual snapshots to identify memory issues
+          • This tool requires TWO snapshots: before.heapsnapshot and
+          after.heapsnapshot
           <Newline />
-          • Compare 'before.heapsnapshot' and 'after.heapsnapshot' to track
-          changes
-          <Newline />• Use agent mode for automated analysis: --agent [filename]
+          • Take 'before' snapshot at your app's stable state
+          <Newline />
+          • Perform leak-prone actions (navigation, modals, etc.)
+          <Newline />
+          • Take 'after' snapshot to compare memory growth
+          <Newline />• The tool will identify objects that should have been
+          cleaned up
         </Text>
       </Box>
 
@@ -118,9 +123,7 @@ export const SnapshotInfo: React.FC<SnapshotInfoProps> = ({
 };
 
 function getSnapshotType(filename: string): string {
-  if (filename === "single.heapsnapshot") {
-    return "🔍 Single Analysis - Standalone memory snapshot";
-  } else if (filename === "before.heapsnapshot") {
+  if (filename === "before.heapsnapshot") {
     return "⏮️ Before State - Initial memory state for comparison";
   } else if (filename === "after.heapsnapshot") {
     return "⏭️ After State - Memory state after operations for comparison";
@@ -129,22 +132,20 @@ function getSnapshotType(filename: string): string {
   } else if (filename.includes("after")) {
     return "⏭️ After State - Memory state after operations";
   } else {
-    return "📊 Custom Snapshot - User-defined memory snapshot";
+    return "📊 Custom Snapshot - May not work with this tool's comparison logic";
   }
 }
 
 function getRecommendedUse(filename: string): string {
-  if (filename === "single.heapsnapshot") {
-    return "Analyze this snapshot to identify memory hotspots and potential leaks";
-  } else if (filename === "before.heapsnapshot") {
-    return "Use with after.heapsnapshot for memory diff analysis";
+  if (filename === "before.heapsnapshot") {
+    return "✅ Required: Use with after.heapsnapshot for memory leak detection";
   } else if (filename === "after.heapsnapshot") {
-    return "Use with before.heapsnapshot to compare memory changes";
+    return "✅ Required: Use with before.heapsnapshot to identify memory growth";
   } else if (filename.includes("before")) {
     return "Baseline snapshot for memory comparison analysis";
   } else if (filename.includes("after")) {
     return "Changed state snapshot for memory comparison analysis";
   } else {
-    return "Run individual analysis to understand memory composition";
+    return "⚠️  This tool requires before.heapsnapshot and after.heapsnapshot specifically";
   }
 }

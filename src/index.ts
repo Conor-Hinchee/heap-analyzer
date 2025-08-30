@@ -29,7 +29,7 @@ Options:
   -h, --help                            Show help information
 
 Examples:
-  heap-analyzer --agent                 # Analyze ./snapshots/single.heapsnapshot
+  heap-analyzer --agent                 # Analyze ./snapshots/after.heapsnapshot
   heap-analyzer --agent my-app.heapsnapshot    # Analyze specific file
   heap-analyzer --agent --markdown     # Analyze and output as markdown report
   heap-analyzer --watch ./snapshots    # Monitor snapshots directory for new files
@@ -37,9 +37,9 @@ Examples:
   process.exit(0);
 }
 
-// If no specific snapshot provided, look for one in snapshots directory
+// If no specific snapshot provided, look for after.heapsnapshot in snapshots directory
 if (isAgentMode && !snapshotPath) {
-  snapshotPath = './snapshots/single.heapsnapshot';
+  snapshotPath = './snapshots/after.heapsnapshot';
 }
 
 if (isWatchMode) {
