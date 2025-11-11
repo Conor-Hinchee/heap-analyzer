@@ -43,6 +43,8 @@ export interface DOMLeakSummary {
 
 export type AppStep = 
   | 'welcome' 
+  | 'workflowSelector'
+  | 'workflowProgress'
   | 'checkDirectory' 
   | 'promptDirectory' 
   | 'directoryCreated' 

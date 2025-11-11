@@ -9,6 +9,16 @@ export interface FrameworkInfo {
   commonLeakPatterns: string[];
 }
 
+export interface FrameworkLeak {
+  framework: 'nextjs' | 'react-router' | 'redux' | 'context' | 'react' | 'vue' | 'angular' | 'unknown';
+  leakType: 'route_retention' | 'state_subscription' | 'context_provider' | 'middleware_retention' | 'hydration_mismatch' | 'component_retention';
+  nodes: HeapNode[];
+  description: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  fixRecommendation: string;
+  retainedSize: number;
+}
+
 export interface FrameworkDetectionResult {
   primary?: FrameworkInfo;
   secondary: FrameworkInfo[];
@@ -16,6 +26,7 @@ export interface FrameworkDetectionResult {
   libraries: string[];
   totalFrameworkMemory: number;
   recommendations: string[];
+  frameworkLeaks: FrameworkLeak[];
 }
 
 export class FrameworkDetector {
@@ -24,6 +35,7 @@ export class FrameworkDetector {
   private nodeTypes: Set<string>;
   private allNodeNames: string[]; // Store all node names for better analysis
   private minifiedPatterns: Map<string, number> = new Map(); // Track minified code patterns
+  private frameworkLeaks: FrameworkLeak[] = [];
 
   constructor(nodes: HeapNode[]) {
     this.nodes = nodes;
@@ -31,6 +43,7 @@ export class FrameworkDetector {
     this.nodeTypes = new Set(nodes.map(n => n.type).filter(Boolean));
     this.allNodeNames = nodes.map(n => n.name || '').filter(Boolean);
     this.analyzeMinifiedPatterns();
+    this.analyzeFrameworkLeaks();
   }
 
   /**
@@ -111,7 +124,8 @@ export class FrameworkDetector {
       buildTools,
       libraries,
       totalFrameworkMemory,
-      recommendations: this.generateRecommendations(primary, secondary, totalFrameworkMemory)
+      recommendations: this.generateRecommendations(primary, secondary, totalFrameworkMemory),
+      frameworkLeaks: this.frameworkLeaks
     };
   }
 
@@ -570,6 +584,146 @@ export class FrameworkDetector {
 
     return recommendations;
   }
+
+  /**
+   * Analyzes framework-specific memory leaks
+   */
+  private analyzeFrameworkLeaks(): void {
+    this.analyzeReactLeaks();
+    this.analyzeNextJsLeaks();
+    this.analyzeReactRouterLeaks();
+    this.analyzeReduxLeaks();
+    this.analyzeContextLeaks();
+  }
+
+  /**
+   * Analyzes React-specific memory leaks
+   */
+  private analyzeReactLeaks(): void {
+    const reactNodes = this.nodes.filter(node => 
+      node.name?.includes('React') || 
+      node.name?.includes('react') ||
+      node.name?.includes('Component') ||
+      node.name?.includes('Hook')
+    );
+
+    // Check for large React components
+    const largeComponents = reactNodes.filter(node => node.selfSize > 1024 * 50); // > 50KB
+    largeComponents.forEach(node => {
+      this.frameworkLeaks.push({
+        framework: 'react',
+        leakType: 'component_retention',
+        nodes: [node],
+        description: `Large React component retained: ${node.name} (${(node.selfSize / 1024).toFixed(1)}KB)`,
+        severity: node.selfSize > 1024 * 200 ? 'critical' : 'high',
+        fixRecommendation: 'Check for refs, event listeners, or state that prevents component cleanup',
+        retainedSize: node.selfSize
+      });
+    });
+  }
+
+  /**
+   * Analyzes Next.js-specific memory leaks
+   */
+  private analyzeNextJsLeaks(): void {
+    const nextNodes = this.nodes.filter(node => 
+      node.name?.includes('next/') ||
+      node.name?.includes('Next') ||
+      node.name?.includes('_app') ||
+      node.name?.includes('getServerSideProps')
+    );
+
+    if (nextNodes.length > 10) {
+      const retainedSize = nextNodes.reduce((sum, n) => sum + n.selfSize, 0);
+      this.frameworkLeaks.push({
+        framework: 'nextjs',
+        leakType: 'route_retention',
+        nodes: nextNodes,
+        description: `${nextNodes.length} Next.js routes/pages retained in memory`,
+        severity: nextNodes.length > 50 ? 'critical' : 'high',
+        fixRecommendation: 'Check for route caching issues, ensure proper cleanup in SSR functions',
+        retainedSize
+      });
+    }
+  }
+
+  /**
+   * Analyzes React Router memory leaks
+   */
+  private analyzeReactRouterLeaks(): void {
+    const routerNodes = this.nodes.filter(node => 
+      node.name?.includes('react-router') ||
+      node.name?.includes('Router') ||
+      node.name?.includes('Route')
+    );
+
+    const historyNodes = routerNodes.filter(node => 
+      node.name?.includes('history') || node.name?.includes('History')
+    );
+
+    if (historyNodes.length > 20) {
+      this.frameworkLeaks.push({
+        framework: 'react-router',
+        leakType: 'route_retention',
+        nodes: historyNodes,
+        description: `React Router history retention: ${historyNodes.length} history entries`,
+        severity: historyNodes.length > 100 ? 'critical' : 'high',
+        fixRecommendation: 'Limit browser history size, use replace instead of push',
+        retainedSize: historyNodes.reduce((sum, n) => sum + n.selfSize, 0)
+      });
+    }
+  }
+
+  /**
+   * Analyzes Redux memory leaks
+   */
+  private analyzeReduxLeaks(): void {
+    const reduxNodes = this.nodes.filter(node => 
+      node.name?.includes('redux') ||
+      node.name?.includes('Redux') ||
+      node.name?.includes('store')
+    );
+
+    const subscriberNodes = reduxNodes.filter(node =>
+      node.name?.includes('subscribe') || node.name?.includes('Subscriber')
+    );
+
+    if (subscriberNodes.length > 10) {
+      this.frameworkLeaks.push({
+        framework: 'redux',
+        leakType: 'state_subscription',
+        nodes: subscriberNodes,
+        description: `Redux subscription leak: ${subscriberNodes.length} active subscriptions`,
+        severity: subscriberNodes.length > 50 ? 'critical' : 'high',
+        fixRecommendation: 'Ensure useSelector subscriptions are cleaned up properly',
+        retainedSize: subscriberNodes.reduce((sum, n) => sum + n.selfSize, 0)
+      });
+    }
+  }
+
+  /**
+   * Analyzes React Context memory leaks
+   */
+  private analyzeContextLeaks(): void {
+    const contextNodes = this.nodes.filter(node => 
+      node.name?.includes('Context') ||
+      node.name?.includes('Provider') ||
+      node.name?.includes('Consumer')
+    );
+
+    const largeProviders = contextNodes.filter(node => node.selfSize > 1024 * 100); // > 100KB
+    largeProviders.forEach(node => {
+      this.frameworkLeaks.push({
+        framework: 'context',
+        leakType: 'context_provider',
+        nodes: [node],
+        description: `Large React Context Provider: ${node.name} (${(node.selfSize / 1024).toFixed(1)}KB)`,
+        severity: node.selfSize > 1024 * 500 ? 'critical' : 'high',
+        fixRecommendation: 'Optimize context value, avoid large objects, use context splitting',
+        retainedSize: node.selfSize
+      });
+    });
+  }
 }
 
 // Helper function to format framework detection results
@@ -613,6 +767,44 @@ export function formatFrameworkDetection(result: FrameworkDetectionResult): stri
     result.recommendations.forEach(rec => {
       output += `   ${rec}\n`;
     });
+  }
+
+  if (result.frameworkLeaks.length > 0) {
+    output += '\n🚨 FRAMEWORK-SPECIFIC MEMORY LEAKS\n';
+    output += '='.repeat(40) + '\n';
+    
+    const criticalLeaks = result.frameworkLeaks.filter(l => l.severity === 'critical');
+    const highLeaks = result.frameworkLeaks.filter(l => l.severity === 'high');
+    const mediumLeaks = result.frameworkLeaks.filter(l => l.severity === 'medium');
+    
+    if (criticalLeaks.length > 0) {
+      output += '\n🔥 CRITICAL LEAKS:\n';
+      criticalLeaks.forEach(leak => {
+        const sizeMB = (leak.retainedSize / (1024 * 1024)).toFixed(1);
+        output += `   • ${leak.framework.toUpperCase()}: ${leak.description} (${sizeMB}MB)\n`;
+        output += `     Fix: ${leak.fixRecommendation}\n`;
+      });
+    }
+    
+    if (highLeaks.length > 0) {
+      output += '\n⚠️  HIGH PRIORITY:\n';
+      highLeaks.forEach(leak => {
+        const sizeMB = (leak.retainedSize / (1024 * 1024)).toFixed(1);
+        output += `   • ${leak.framework.toUpperCase()}: ${leak.description} (${sizeMB}MB)\n`;
+        output += `     Fix: ${leak.fixRecommendation}\n`;
+      });
+    }
+    
+    if (mediumLeaks.length > 0) {
+      output += '\n📋 MEDIUM PRIORITY:\n';
+      mediumLeaks.forEach(leak => {
+        const sizeKB = (leak.retainedSize / 1024).toFixed(1);
+        output += `   • ${leak.framework.toUpperCase()}: ${leak.description} (${sizeKB}KB)\n`;
+      });
+    }
+    
+    const totalLeakSize = result.frameworkLeaks.reduce((sum, l) => sum + l.retainedSize, 0);
+    output += `\n📊 Total Framework Leak Size: ${(totalLeakSize / (1024 * 1024)).toFixed(1)}MB\n`;
   }
 
   return output;

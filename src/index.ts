@@ -7,6 +7,7 @@ import { runAgentMode, runContinuousAgent } from './utils/agentMode.js';
 const args = process.argv.slice(2);
 const isAgentMode = args.includes('--agent') || args.includes('-a');
 const isWatchMode = args.includes('--watch') || args.includes('-w');
+const isCompareMode = args.includes('compare') || args[0] === 'compare';
 const showHelp = args.includes('--help') || args.includes('-h');
 const markdownOutput = args.includes('--markdown') || args.includes('-md');
 let snapshotPath = args.find(arg => arg.endsWith('.heapsnapshot'));
@@ -19,6 +20,7 @@ if (showHelp) {
 Usage:
   heap-analyzer                           # Interactive mode
   heap-analyzer --agent [snapshot]       # Agent mode (automated analysis)
+  heap-analyzer compare [options]        # Enhanced comparison analysis
   heap-analyzer --watch [directory]      # Watch mode (continuous monitoring)
   heap-analyzer --help                   # Show this help
 
@@ -28,10 +30,15 @@ Options:
   -md, --markdown                       Output analysis as markdown in reports directory
   -h, --help                            Show help information
 
+Commands:
+  compare                               Enhanced before/after comparison analysis
+
 Examples:
   heap-analyzer --agent                 # Analyze ./snapshots/after.heapsnapshot
   heap-analyzer --agent my-app.heapsnapshot    # Analyze specific file
   heap-analyzer --agent --markdown     # Analyze and output as markdown report
+  heap-analyzer compare                 # Enhanced before/after analysis
+  heap-analyzer compare --verbose      # Detailed comparison with extra info
   heap-analyzer --watch ./snapshots    # Monitor snapshots directory for new files
   `);
   process.exit(0);
@@ -46,6 +53,14 @@ if (isWatchMode) {
   // Run in watch mode
   const watchDirectory = args.find(arg => !arg.startsWith('-') && !arg.endsWith('.heapsnapshot')) || './snapshots';
   runContinuousAgent(watchDirectory);
+} else if (isCompareMode) {
+  // Run enhanced comparison analysis
+  console.log('🔬 Starting Enhanced Comparison Analysis...');
+  const { runEnhancedComparison } = await import('./compare.js');
+  // Remove 'compare' from args and pass the rest
+  const compareArgs = args.filter(arg => arg !== 'compare');
+  process.argv = ['node', 'compare', ...compareArgs];
+  await runEnhancedComparison();
 } else if (isAgentMode) {
   // Run in agent mode
   if (snapshotPath) {

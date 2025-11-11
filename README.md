@@ -6,7 +6,8 @@ A CLI and agent tool for analyzing JavaScript heap snapshots from Google DevTool
 
 - 🖥️ **Interactive CLI** for guided manual analysis
 - 🤖 **Agent Mode** for automated analysis and reporting
-- 📊 **Continuous Monitoring** with watch mode
+- � **Enhanced Compare Mode** for detailed before/after analysis
+- �📊 **Continuous Monitoring** with watch mode
 - 🔍 **Memory leak detection** with categorized insights
 - 💡 **Actionable recommendations** for optimization
 - 📁 **JSON reports** for CI/CD integration
@@ -23,6 +24,8 @@ npm install --save-dev heap-analyzer
 
 **🚀 Quick Start**: For immediate heap analysis, see [AGENT.md](./AGENT.md) - zero-config automated analysis guide.
 
+**🔧 Real-Time Debugging**: For browser console debugging snippets, see [DEBUGGING_SNIPPETS.md](./DEBUGGING_SNIPPETS.md) - intercept and track leaks as they happen.
+
 ## Usage
 
 ### Interactive Mode
@@ -35,19 +38,37 @@ npx heap-analyzer
 
 ### Agent Mode (Automated Analysis)
 
-Analyze a specific heap snapshot:
+**Single Snapshot Analysis:**
 
 ```sh
 npx heap-analyzer --agent path/to/snapshot.heapsnapshot
 ```
 
-Auto-analyze the default snapshot:
+**Auto-detect Analysis:**
 
 ```sh
 npx heap-analyzer --agent
 ```
 
-Generate a markdown report:
+_Automatically detects `./snapshots/after.heapsnapshot` for single analysis, or runs before/after comparison if both `before.heapsnapshot` and `after.heapsnapshot` exist_
+
+### Enhanced Compare Mode (Detailed Analysis)
+
+**Direct Comparison:**
+
+```sh
+npx heap-analyzer compare before.heapsnapshot after.heapsnapshot
+```
+
+**With Custom Options:**
+
+```sh
+npx heap-analyzer compare --before initial.heapsnapshot --after final.heapsnapshot --output detailed-report.json --verbose
+```
+
+_Use enhanced compare when agent mode shows HIGH/CRITICAL issues for precise leak attribution and detailed investigation_
+
+**Generate Markdown Report:**
 
 ```sh
 npx heap-analyzer --agent --markdown
@@ -63,21 +84,56 @@ npx heap-analyzer --watch ./snapshots
 
 ### Command Line Options
 
+**Agent Mode:**
+
 - `-a, --agent` - Run automated analysis on heap snapshot
-- `-w, --watch` - Monitor directory for new snapshots
 - `-md, --markdown` - Generate markdown report (use with --agent)
+
+**Compare Mode:**
+
+- `compare <before> <after>` - Run enhanced comparison between two snapshots
+- `--before <file>` - Specify before snapshot (alternative syntax)
+- `--after <file>` - Specify after snapshot (alternative syntax)
+- `--output <file>` - Custom output location for detailed JSON report
+- `--verbose, -v` - Enable verbose output for debugging
+
+**Watch Mode:**
+
+- `-w, --watch` - Monitor directory for new snapshots
+
+**General:**
+
 - `-h, --help` - Show help information
 
 ## Agent Mode Features
 
-Agent mode provides automated analysis with:
+**Quick Triage (Agent Mode)** provides automated analysis with:
 
 - **Severity Assessment**: Categorizes memory issues as LOW, MEDIUM, HIGH, or CRITICAL
 - **Smart Insights**: Identifies patterns like large DOM trees, memory leaks, and retention issues
 - **Categorized Analysis**: Groups memory consumers by type (DOM, React, Closures, Arrays, etc.)
-- **Actionable Recommendations**: Specific suggestions for memory optimization
+- **Escalation Guidance**: Clear indicators when enhanced comparison is needed
+
+**Deep Investigation (Enhanced Compare Mode)** provides detailed analysis with:
+
+- **Precise Leak Attribution**: 95%+ confidence scoring with visual indicators
+- **Object-Level Analysis**: Detailed breakdown of new/grown objects with size rankings
+- **Collection Growth Detection**: Arrays, Maps, Sets, and Object accumulation patterns
+- **Performance Impact Assessment**: JavaScript execution pattern changes
+- **Actionable Recommendations**: Specific suggestions for memory optimization with priority ordering
 - **JSON Reports**: Saves detailed analysis to `./reports/` for programmatic usage
 - **Markdown Reports**: Human-readable reports perfect for documentation and team sharing
+
+### Snapshot-Only Analysis Capability
+
+The heap analyzer detects memory leaks using **only snapshot data**, without requiring:
+
+- Component source code access
+- Global variable names or application structure
+- Specific collection types or framework details
+- Exact growth mechanisms or application logic
+
+This snapshot-isolated approach ensures accurate leak detection across any JavaScript application, regardless of framework or implementation patterns.
 
 For detailed markdown report features, see [MARKDOWN_REPORTS.md](./MARKDOWN_REPORTS.md).
 
