@@ -2,32 +2,41 @@
   "name": "heap-analyzer",
   "version": "1.0.2",
   "type": "module",
+  "main": "dist/index.js",
   "bin": {
-    "heap-analyzer": "bin/cli.js"
+    "heap-analyzer": "dist/cli.js"
   },
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
-    "hello": "node hello.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "release-patch": "npm version patch && npm publish",
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "dev:watch": "tsc --watch",
-    "prepublishOnly": "npm run build",
-    "clear-reports": "rm -rf reports/* && echo 'Reports directory cleared successfully'",
-    "pick-snapshot": "bash ./scripts/pick-and-replace-snapshot.sh",
-    "inspect-object": "node bin/inspect-object.js"
+    "start": "node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "release-patch": "npm version patch && npm publish",
+    "prepublishOnly": "npm run build"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "heap",
+    "memory",
+    "analysis",
+    "profiling",
+    "debugging",
+    "performance"
+  ],
+  "author": "Conor-Hinchee",
   "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "ink": "^6.0.1",
-    "react": "^19.1.0"
+  "description": "A powerful heap analyzer for Node.js memory profiling and leak detection",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Conor-Hinchee/heap-analyzer.git"
   },
   "devDependencies": {
     "@types/node": "^24.0.7",
-    "@types/react": "^19.1.8",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   }
