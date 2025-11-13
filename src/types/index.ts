@@ -1,3 +1,7 @@
+// Re-export from heap analyzer for type consistency
+import { AnalysisResult as HeapAnalysisResult } from '../utils/heapAnalyzer.js';
+export type AnalysisResult = HeapAnalysisResult;
+
 export interface SnapshotFile {
   name: string;
   path: string;
@@ -12,6 +16,20 @@ export interface HeapNode {
   selfSize: number;
   retainedSize: number;
   id: number;
+  shallowSize?: number;
+}
+
+export interface HeapEdge {
+  type: string;
+  name?: string;
+  fromNode: number;
+  toNode: number;
+}
+
+export interface HeapSnapshot {
+  nodes: HeapNode[];
+  edges?: HeapEdge[];
+  strings?: string[];
 }
 
 export interface RetainerResult {
@@ -60,4 +78,49 @@ export interface MenuOption {
   label: string;
   value: string;
   description?: string;
+}
+
+export interface AgentAnalysisReport {
+  timestamp: string;
+  snapshotPath: string;
+  analysis: AnalysisResult;
+  comprehensiveAnalysis?: any; // ComparisonResult from beforeAfterAnalyzer
+  frameworkInfo?: any; // FrameworkDetectionResult
+  traceResults?: {
+    totalLikelyLeaks: number;
+    highConfidenceLeaks: number;
+    totalRetainedByLeaks: number;
+    leakCategories: Record<string, number>;
+  };
+  distributedAnalysis?: {
+    suspiciousPatterns: Array<{
+      type: string;
+      description: string;
+      severity: 'low' | 'medium' | 'high';
+      recommendation: string;
+    }>;
+    distributedMemory: {
+      timerRelatedMemory: number;
+      closureMemory: number;
+      arrayMemory: number;
+      fragmentedMemory: number;
+    };
+  };
+  specializedInsights: {
+    reactInsights: string[];
+    fiberInsights: string[];
+    stringInsights: string[];
+    shapeInsights: string[];
+    domInsights: string[];
+  };
+  prioritizedRecommendations: Array<{
+    priority: number;
+    impact: string;
+    description: string;
+    confidence: number;
+    category: string;
+  }>;
+  insights: string[];
+  recommendations: string[];
+  severity: 'low' | 'medium' | 'high' | 'critical';
 }

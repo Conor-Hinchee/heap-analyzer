@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Import the enhanced BeforeAfterAnalyzer
-import { BeforeAfterAnalyzer } from '../dist/src/utils/beforeAfterAnalyzer.js';
+import { BeforeAfterAnalyzer } from '../dist/utils/beforeAfterAnalyzer.js';
 
 async function main() {
   const args = process.argv.slice(2);

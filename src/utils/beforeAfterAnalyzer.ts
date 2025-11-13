@@ -1,4 +1,18 @@
 import { HeapNode } from './heapAnalyzer.js';
+import { isBuiltInGlobal } from './builtInGlobals.js';
+import { analyzeGlobalVariables } from './globalVariableAnalyzer.js';
+import { analyzeStaleCollections } from './staleCollectionAnalyzer.js';
+import { analyzeUnboundGrowth, UnboundGrowthAnalysisResult } from './unboundGrowthAnalyzer.js';
+import { DetachedDomAnalyzer } from './detachedDomAnalyzer.js';
+import { ObjectFanoutAnalyzer } from './objectFanoutAnalyzer.js';
+import { ObjectShallowAnalyzer } from './objectShallowAnalyzer.js';
+import { ObjectShapeAnalyzer } from './objectShapeAnalyzer.js';
+import { ObjectSizeRankAnalyzer } from './objectSizeRankAnalyzer.js';
+import { ObjectUnboundGrowthAnalyzer } from './objectUnboundGrowthAnalyzer.js';
+import { ReactComponentHookAnalyzer, ReactAnalysisResult } from './reactComponentHookAnalyzer.js';
+import { ShapeUnboundGrowthAnalyzer, ShapeUnboundGrowthAnalysisResult } from './shapeUnboundGrowthAnalyzer.js';
+import { StringAnalyzer, StringAnalysisResult } from './stringAnalyzer.js';
+import { UnmountedFiberNodeAnalyzer, UnmountedFiberAnalysisResult } from './unmountedFiberNodeAnalyzer.js';
 
 export interface ComparisonResult {
   memoryGrowth: {
@@ -33,6 +47,33 @@ export interface ComparisonResult {
     primaryConcerns: string[];
     recommendations: string[];
   };
+  beforeAnalysis?: {
+    globalVariableAnalysis?: any;
+    staleCollectionAnalysis?: any;
+    detachedDomAnalysis?: any;
+    fanoutAnalysis?: any;
+    shallowAnalysis?: any;
+    shapeAnalysis?: any;
+    sizeRankAnalysis?: any;
+    reactAnalysis?: ReactAnalysisResult;
+    stringAnalysis?: StringAnalysisResult;
+    unmountedFiberAnalysis?: UnmountedFiberAnalysisResult;
+  };
+  afterAnalysis?: {
+    globalVariableAnalysis?: any;
+    staleCollectionAnalysis?: any;
+    detachedDomAnalysis?: any;
+    fanoutAnalysis?: any;
+    shallowAnalysis?: any;
+    shapeAnalysis?: any;
+    sizeRankAnalysis?: any;
+    reactAnalysis?: ReactAnalysisResult;
+    stringAnalysis?: StringAnalysisResult;
+    unmountedFiberAnalysis?: UnmountedFiberAnalysisResult;
+  };
+  unboundGrowthAnalysis?: UnboundGrowthAnalysisResult;
+  objectUnboundGrowthAnalysis?: any;
+  shapeUnboundGrowthAnalysis?: ShapeUnboundGrowthAnalysisResult;
 }
 
 export class BeforeAfterAnalyzer {
@@ -64,12 +105,70 @@ export class BeforeAfterAnalyzer {
     // Generate summary and recommendations
     const summary = this.generateSummary(memoryGrowth, newObjects, potentialLeaks);
 
+    // Analyze global variables in both snapshots
+    const beforeNodes = Array.from(beforeObjects.values());
+    const afterNodes = Array.from(afterObjects.values());
+    
+    const detachedDomAnalyzer = new DetachedDomAnalyzer();
+    const fanoutAnalyzer = new ObjectFanoutAnalyzer();
+    const shallowAnalyzer = new ObjectShallowAnalyzer();
+    const shapeAnalyzer = new ObjectShapeAnalyzer();
+    const sizeRankAnalyzer = new ObjectSizeRankAnalyzer();
+    
+    const beforeAnalysis = {
+      globalVariableAnalysis: analyzeGlobalVariables(beforeNodes),
+      staleCollectionAnalysis: analyzeStaleCollections(beforeNodes),
+      detachedDomAnalysis: detachedDomAnalyzer.analyze({ nodes: beforeNodes }),
+      fanoutAnalysis: fanoutAnalyzer.analyze({ nodes: beforeNodes }),
+      shallowAnalysis: shallowAnalyzer.analyze({ nodes: beforeNodes }),
+      shapeAnalysis: shapeAnalyzer.analyze({ nodes: beforeNodes }),
+      sizeRankAnalysis: sizeRankAnalyzer.analyze({ nodes: beforeNodes }),
+      reactAnalysis: new ReactComponentHookAnalyzer().analyze({ nodes: beforeNodes }),
+      stringAnalysis: new StringAnalyzer().analyze({ nodes: beforeNodes }),
+      unmountedFiberAnalysis: new UnmountedFiberNodeAnalyzer().analyze({ nodes: beforeNodes })
+    };
+    
+    const afterAnalysis = {
+      globalVariableAnalysis: analyzeGlobalVariables(afterNodes),
+      staleCollectionAnalysis: analyzeStaleCollections(afterNodes),
+      detachedDomAnalysis: detachedDomAnalyzer.analyze({ nodes: afterNodes }),
+      fanoutAnalysis: fanoutAnalyzer.analyze({ nodes: afterNodes }),
+      shallowAnalysis: shallowAnalyzer.analyze({ nodes: afterNodes }),
+      shapeAnalysis: shapeAnalyzer.analyze({ nodes: afterNodes }),
+      sizeRankAnalysis: sizeRankAnalyzer.analyze({ nodes: afterNodes }),
+      reactAnalysis: new ReactComponentHookAnalyzer().analyze({ nodes: afterNodes }),
+      stringAnalysis: new StringAnalyzer().analyze({ nodes: afterNodes }),
+      unmountedFiberAnalysis: new UnmountedFiberNodeAnalyzer().analyze({ nodes: afterNodes })
+    };
+
+    // Analyze unbound growth across both snapshots
+    const unboundGrowthAnalysis = analyzeUnboundGrowth([beforeNodes, afterNodes]);
+
+    // Analyze individual object growth across snapshots
+    const objectUnboundGrowthAnalyzer = new ObjectUnboundGrowthAnalyzer();
+    const objectUnboundGrowthAnalysis = objectUnboundGrowthAnalyzer.analyzeAcrossSnapshots([
+      { nodes: beforeNodes },
+      { nodes: afterNodes }
+    ]);
+
+    // Analyze shape unbound growth across snapshots
+    const shapeUnboundGrowthAnalyzer = new ShapeUnboundGrowthAnalyzer();
+    const shapeUnboundGrowthAnalysis = shapeUnboundGrowthAnalyzer.analyzeAcrossSnapshots([
+      { nodes: beforeNodes },
+      { nodes: afterNodes }
+    ]);
+
     return {
       memoryGrowth,
       newObjects,
       grownObjects,
       potentialLeaks,
       summary,
+      beforeAnalysis,
+      afterAnalysis,
+      unboundGrowthAnalysis,
+      objectUnboundGrowthAnalysis,
+      shapeUnboundGrowthAnalysis,
     };
   }
 
@@ -1172,28 +1271,24 @@ export class BeforeAfterAnalyzer {
     const name = node.name || '';
     const type = node.type || '';
     
+    // Filter out built-in globals first
+    if (isBuiltInGlobal(name)) {
+      return false; // Don't flag built-in globals as leaks
+    }
+    
     // Detect objects attached to global scope (window.* properties)
     return (
       // Window property patterns
       name.includes('window.') ||
       name.includes('global.') ||
       
-      // Generic global leak patterns - TODO: Replace with dynamic detection
+      // Generic global leak patterns - now more accurate without built-ins
       (type === 'object' && (
         name.includes('Archive') ||
         name.includes('Cache') ||
         name.includes('Store') ||
         name.includes('Buffer') ||
         name.includes('Pool') ||
-        name.includes('Registry') ||
-        name.includes('Manager')
-      )) ||
-      
-      // Generic global leak patterns
-      (type === 'object' && (
-        name.includes('Archive') ||
-        name.includes('Cache') ||
-        name.includes('Store') ||
         name.includes('Registry') ||
         name.includes('Manager')
       )) ||

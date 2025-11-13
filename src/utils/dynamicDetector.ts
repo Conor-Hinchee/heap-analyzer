@@ -5,6 +5,7 @@
  */
 
 import { MEMORY_THRESHOLDS, calculateLeakConfidence, calculateSeverity } from './memoryThresholds.js';
+import { isBuiltInGlobal } from './builtInGlobals.js';
 
 export interface GlobalVariable {
   name: string;
@@ -180,6 +181,11 @@ export function generateDynamicRecommendations(
  */
 
 function isInGlobalScope(name: string, node: any): boolean {
+  // First check if it's a built-in global (should be ignored)
+  if (isBuiltInGlobal(name)) {
+    return false; // Don't flag built-in globals as leaks
+  }
+
   return (
     name.includes('window.') ||
     name.includes('global.') ||

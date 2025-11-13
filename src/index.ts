@@ -28,6 +28,10 @@ Options:
   -a, --agent                           Run in agent mode for automated analysis
   -w, --watch                           Run in watch mode for continuous monitoring
   -md, --markdown                       Output analysis as markdown in reports directory
+
+Memory Options (for large snapshots):
+  node --max-old-space-size=8192 bin/cli.js --agent [snapshot]   # 8GB memory limit
+  node --max-old-space-size=4096 bin/cli.js --agent [snapshot]   # 4GB memory limit
   -h, --help                            Show help information
 
 Commands:

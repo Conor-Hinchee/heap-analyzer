@@ -2,6 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { ReactDetector, ReactDetachedNode, ReactLeakPattern } from './reactDetector.js';
 import { FrameworkDetector, FrameworkDetectionResult, formatFrameworkDetection } from './frameworkDetector.js';
+import { isBuiltInGlobal } from './builtInGlobals.js';
+import { analyzeGlobalVariables, GlobalVariableAnalysisResult } from './globalVariableAnalyzer.js';
+import { analyzeStaleCollections, StaleCollectionAnalysisResult } from './staleCollectionAnalyzer.js';
 
 export interface HeapNode {
   nodeIndex: number;
@@ -48,6 +51,8 @@ export interface AnalysisResult {
   topRetainers: RetainerResult[];
   detachedDOMNodes: DetachedDOMNode[];
   domLeakSummary: DOMLeakSummary;
+  globalVariableAnalysis?: GlobalVariableAnalysisResult;
+  staleCollectionAnalysis?: StaleCollectionAnalysisResult;
   frameworkAnalysis?: FrameworkDetectionResult;
   summary: {
     totalObjects: number;
@@ -223,6 +228,12 @@ export class HeapAnalyzer {
     const frameworkDetector = new FrameworkDetector(this.nodes);
     const frameworkAnalysis = frameworkDetector.detectFrameworks();
 
+    // Global variable analysis
+    const globalVariableAnalysis = analyzeGlobalVariables(this.nodes);
+
+    // Stale collection analysis
+    const staleCollectionAnalysis = analyzeStaleCollections(this.nodes);
+
     // Calculate summary
     const totalRetainedSize = this.nodes.reduce((sum, node) => sum + node.selfSize, 0);
     const categories: Record<string, number> = {};
@@ -235,6 +246,8 @@ export class HeapAnalyzer {
       topRetainers,
       detachedDOMNodes: domAnalysis.detachedNodes,
       domLeakSummary: domAnalysis.summary,
+      globalVariableAnalysis,
+      staleCollectionAnalysis,
       frameworkAnalysis,
       summary: {
         totalObjects: this.nodes.length,
@@ -454,13 +467,18 @@ export class HeapAnalyzer {
     const name = node.name || '';
     const type = node.type || '';
     
+    // Filter out built-in globals first
+    if (isBuiltInGlobal(name)) {
+      return false; // Don't flag built-in globals as leaks
+    }
+    
     // Detect objects attached to global scope (window.* properties)
     return (
       // Window property patterns
       name.includes('window.') ||
       name.includes('global.') ||
       
-      // Generic global leak patterns - TODO: Replace with dynamic detection
+      // Generic global leak patterns - now more accurate without built-ins
       (type === 'object' && (
         name.includes('Archive') ||
         name.includes('Cache') ||

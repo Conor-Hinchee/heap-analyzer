@@ -155,6 +155,45 @@ Example findings:
 - Timer activity: 45 timer references (potential leaks)
 - Memory growth: 9.88MB → 11.66MB between snapshots
 
+## Development Tools
+
+### Object Content Analyzer
+
+For deep inspection of specific suspicious objects found in your analysis:
+
+```sh
+npm run inspect-object <snapshot-file> <node-id>
+```
+
+**When to use:**
+- Investigate specific objects flagged in main analysis
+- Understand object relationships and retention paths  
+- Debug circular references and memory ownership
+- Analyze large objects consuming significant memory
+
+**Example workflow:**
+```sh
+# 1. Run main analysis to find suspects
+npm run dev compare
+
+# Output shows: "🔴 userCache (HIGH) - Node ID: 287534"
+
+# 2. Deep dive into the suspicious object
+npm run inspect-object snapshots/after.heapsnapshot 287534
+
+# 3. Get detailed analysis with retainer chains, references, and fix recommendations
+```
+
+The Object Content Analyzer provides:
+- **Detailed object properties** and memory breakdown
+- **Reference mapping** (what objects it points to)
+- **Referrer analysis** (what objects point to it)
+- **Retainer chains** showing exactly what keeps objects alive
+- **Circular reference detection** with cycle mapping
+- **Actionable recommendations** for specific object types
+
+📚 **Full documentation**: [docs/OBJECT_CONTENT_ANALYZER.md](./docs/OBJECT_CONTENT_ANALYZER.md)
+
 ## CI/CD Integration
 
 Agent mode is perfect for CI/CD pipelines:
@@ -166,6 +205,39 @@ Agent mode is perfect for CI/CD pipelines:
     npx heap-analyzer --agent ./heap-snapshot.heapsnapshot
     # Process the JSON report in ./reports/
 ```
+
+## Interpreting Analysis Results
+
+### Severity Levels
+
+- **LOW**: Minor memory variations, typically within normal application behavior
+- **MEDIUM**: Noticeable memory growth patterns that warrant investigation
+- **HIGH**: Significant memory leaks detected with clear attribution
+- **CRITICAL**: Large-scale memory growth requiring immediate attention
+
+### Common Leak Patterns
+
+**Data URL/Base64 Accumulation**: Canvas operations, image caching, file uploads
+- Look for: `toDataURL()`, `FileReader`, growing arrays of base64 strings
+- Fix: Implement cleanup cycles, use object URLs, clear caches
+
+**Event Listener Leaks**: Missing cleanup in component lifecycle
+- Look for: `addEventListener` without `removeEventListener`
+- Fix: Add cleanup in unmount/destroy hooks
+
+**Timer Leaks**: Uncleaned intervals and timeouts
+- Look for: `setInterval`, `setTimeout` without corresponding clear calls
+- Fix: Store timer IDs and clear them on cleanup
+
+**Collection Growth**: Unbounded arrays, maps, or sets
+- Look for: Global collections that only grow, never shrink
+- Fix: Implement size limits, periodic cleanup, or LRU eviction
+
+### Analysis Metrics
+
+**Memory Growth**: Absolute and percentage increase between snapshots
+**Object Count**: New objects created, useful for detecting object accumulation
+**File Size Growth**: Raw snapshot size difference, indicates data structure bloat
 
 ## Heap Snapshot Creation
 

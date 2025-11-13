@@ -14,7 +14,8 @@
     "dev:watch": "tsc --watch",
     "prepublishOnly": "npm run build",
     "clear-reports": "rm -rf reports/* && echo 'Reports directory cleared successfully'",
-    "pick-snapshot": "bash ./scripts/pick-and-replace-snapshot.sh"
+    "pick-snapshot": "bash ./scripts/pick-and-replace-snapshot.sh",
+    "inspect-object": "node bin/inspect-object.js"
   },
   "keywords": [],
   "author": "",
