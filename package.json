@@ -9,6 +9,7 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
+    "snapshots",
     "README.md"
   ],
   "scripts": {
@@ -16,8 +17,10 @@
     "dev": "tsx src/index.ts",
     "dev:watch": "tsc --watch",
     "start": "node dist/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "release-patch": "npm version patch && npm publish",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "release-patch": "npm test && npm run build && npm version patch && npm publish",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -36,8 +39,14 @@
     "url": "git+https://github.com/Conor-Hinchee/heap-analyzer.git"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^24.0.7",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@memlab/core": "^1.1.43"
   }
 }

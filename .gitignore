@@ -5,4 +5,5 @@ rough-drafts/
 dist/
 reports/
 snapshots/
+coverage/
 .DS_Store
