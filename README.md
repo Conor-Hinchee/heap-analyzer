@@ -28,101 +28,135 @@ npm install --save-dev heap-analyzer
 
 ## Usage
 
-### Interactive Mode
+heap-analyzer is a complete **memlab wrapper** that provides all memlab functionality with better developer experience and easier file management.
 
-Run the guided CLI interface:
+### Core Analysis Commands
 
+#### Memory Leak Detection
 ```sh
-npx heap-analyzer
+# Basic leak detection (2-3 snapshots)
+npx heap-analyzer find-leaks --baseline before.heapsnapshot --target after.heapsnapshot
+npx heap-analyzer find-leaks --baseline baseline.heapsnapshot --target target.heapsnapshot --final final.heapsnapshot
+
+# Auto-detect snapshots in directory
+npx heap-analyzer find-leaks --snapshot-dir ./snapshots/
 ```
 
-### Agent Mode (Automated Analysis)
-
-**Single Snapshot Analysis:**
-
+#### Growth Analysis (Our Enhancement)
 ```sh
-npx heap-analyzer --agent path/to/snapshot.heapsnapshot
-```
-
-**Auto-detect Analysis:**
-
-```sh
-npx heap-analyzer --agent
-```
-
-_Automatically detects `./snapshots/after.heapsnapshot` for single analysis, or runs before/after comparison if both `before.heapsnapshot` and `after.heapsnapshot` exist_
-
-### Enhanced Compare Mode (Detailed Analysis)
-
-**Direct Comparison:**
-
-```sh
+# Compare memory growth between snapshots
 npx heap-analyzer compare before.heapsnapshot after.heapsnapshot
+
+# Single snapshot analysis
+npx heap-analyzer analyze snapshot.heapsnapshot
 ```
 
-**With Custom Options:**
+#### Interactive Heap Exploration
+```sh
+# Interactive heap exploration (memlab wrapper)
+npx heap-analyzer heap snapshot.heapsnapshot
+
+# Heap visualization (memlab wrapper)
+npx heap-analyzer view-heap snapshot.heapsnapshot
+npx heap-analyzer view-heap snapshot.heapsnapshot --node-id 12345
+```
+
+#### Retainer Trace Analysis
+```sh
+# Analyze why specific objects are retained (memlab wrapper)
+npx heap-analyzer trace snapshot.heapsnapshot --node-id 12345
+```
+
+#### Node.js Server Analysis
+```sh
+# Take heap snapshot from running Node.js process
+npx heap-analyzer node-snapshot --endpoint http://localhost:3000/debug/heap-snapshot
+npx heap-analyzer node-snapshot --pid 12345
+
+# Monitor Node.js process memory and auto-snapshot on high usage
+npx heap-analyzer node-monitor --pid 12345 --threshold 500 --interval 5
+
+# Load test with automatic heap snapshot collection
+npx heap-analyzer node-load-test http://localhost:3000/api/heavy \
+  --endpoint http://localhost:3000/debug/heap-snapshot \
+  --concurrency 50 --duration 60
+```
+
+#### Analysis Plugins
+```sh
+# Run memlab analysis plugins (memlab wrapper)
+npx heap-analyzer analyze-plugin string-analysis
+npx heap-analyzer analyze-plugin <plugin-name>
+```
+
+#### File Management
+```sh
+# List available snapshots
+npx heap-analyzer list
+```
+
+### Advanced Memlab Features (Direct Access)
+
+All memlab commands work directly with better path resolution:
 
 ```sh
-npx heap-analyzer compare --before initial.heapsnapshot --after final.heapsnapshot --output detailed-report.json --verbose
+# Advanced leak detection with filtering
+npx memlab find-leaks --baseline snapshots/sim-1.heapsnapshot --target snapshots/sim-2.heapsnapshot --trace-object-size-above 1000000
+
+# Compare different leak sets
+npx memlab diff-leaks --control-snapshot snapshots/before.heapsnapshot --treatment-snapshot snapshots/after.heapsnapshot
+
+# ML-based clustering
+npx memlab find-leaks --baseline snapshots/baseline.heapsnapshot --target snapshots/target.heapsnapshot --ml-clustering
 ```
 
-_Use enhanced compare when agent mode shows HIGH/CRITICAL issues for precise leak attribution and detailed investigation_
+### Command Reference
 
-**Generate Markdown Report:**
+**Core Commands:**
+- `find-leaks` - Run memlab leak detection (wrapper for memlab find-leaks)
+- `compare <baseline> <target>` - Compare memory growth between snapshots  
+- `analyze <file>` - Analyze single heap snapshot
+- `trace <file> --node-id <id>` - Analyze retainer traces (wrapper for memlab trace)
+- `heap <file>` - Interactive heap exploration (wrapper for memlab heap)
+- `view-heap <file>` - Heap visualization (wrapper for memlab view-heap)
+- `analyze-plugin <plugin>` - Run analysis plugins (wrapper for memlab analyze)
+- `list` - List available snapshots
 
-```sh
-npx heap-analyzer --agent --markdown
-```
+**Options:**
+- `--baseline <file>` - Baseline snapshot (initial state)
+- `--target <file>` - Target snapshot (after action) 
+- `--final <file>` - Final snapshot (after cleanup) - optional
+- `--snapshot-dir <dir>` - Directory containing snapshots
+- `--node-id <id>` - Node ID for retainer trace analysis
+- `--help, -h` - Show help information
 
-### Watch Mode (Continuous Monitoring)
+**File Path Resolution:**
+- Automatically finds files in `./snapshots/` directory
+- Supports relative and absolute paths
+- Smart error handling for missing files
 
-Monitor a directory for new heap snapshots:
+## Complete Memlab Wrapper Features
 
-```sh
-npx heap-analyzer --watch ./snapshots
-```
+**All Memlab Commands Available:**
+- **find-leaks**: Sophisticated memory leak detection with retainer traces
+- **trace**: Analyze specific object retention paths  
+- **heap**: Interactive heap exploration and querying
+- **view-heap**: Visual heap inspection with node focusing
+- **analyze**: Plugin-based heap analysis
+- **diff-leaks**: Compare leak sets between different snapshots
 
-### Command Line Options
+**Enhanced Developer Experience:**
+- **Smart Path Resolution**: Automatically finds files in `./snapshots/` directory
+- **Better Error Messages**: Clear guidance when files are missing or invalid
+- **Consistent Interface**: All memlab commands follow the same pattern
+- **File Validation**: Checks file existence before running expensive operations
+- **Progress Indication**: Shows what's happening before delegating to memlab
 
-**Agent Mode:**
-
-- `-a, --agent` - Run automated analysis on heap snapshot
-- `-md, --markdown` - Generate markdown report (use with --agent)
-
-**Compare Mode:**
-
-- `compare <before> <after>` - Run enhanced comparison between two snapshots
-- `--before <file>` - Specify before snapshot (alternative syntax)
-- `--after <file>` - Specify after snapshot (alternative syntax)
-- `--output <file>` - Custom output location for detailed JSON report
-- `--verbose, -v` - Enable verbose output for debugging
-
-**Watch Mode:**
-
-- `-w, --watch` - Monitor directory for new snapshots
-
-**General:**
-
-- `-h, --help` - Show help information
-
-## Agent Mode Features
-
-**Quick Triage (Agent Mode)** provides automated analysis with:
-
-- **Severity Assessment**: Categorizes memory issues as LOW, MEDIUM, HIGH, or CRITICAL
-- **Smart Insights**: Identifies patterns like large DOM trees, memory leaks, and retention issues
-- **Categorized Analysis**: Groups memory consumers by type (DOM, React, Closures, Arrays, etc.)
-- **Escalation Guidance**: Clear indicators when enhanced comparison is needed
-
-**Deep Investigation (Enhanced Compare Mode)** provides detailed analysis with:
-
-- **Precise Leak Attribution**: 95%+ confidence scoring with visual indicators
-- **Object-Level Analysis**: Detailed breakdown of new/grown objects with size rankings
-- **Collection Growth Detection**: Arrays, Maps, Sets, and Object accumulation patterns
-- **Performance Impact Assessment**: JavaScript execution pattern changes
-- **Actionable Recommendations**: Specific suggestions for memory optimization with priority ordering
-- **JSON Reports**: Saves detailed analysis to `./reports/` for programmatic usage
-- **Markdown Reports**: Human-readable reports perfect for documentation and team sharing
+**Growth Analysis (Our Addition):**
+- **Memory Growth Tracking**: Detailed size and object count comparisons
+- **Object Type Breakdown**: See which types (Arrays, Objects, Strings) grew most
+- **Growth Pattern Detection**: Identify data accumulation vs object creation patterns
+- **Actionable Insights**: Specific recommendations based on growth patterns
 
 ### Snapshot-Only Analysis Capability
 
@@ -135,25 +169,76 @@ The heap analyzer detects memory leaks using **only snapshot data**, without req
 
 This snapshot-isolated approach ensures accurate leak detection across any JavaScript application, regardless of framework or implementation patterns.
 
-For detailed markdown report features, see [MARKDOWN_REPORTS.md](./MARKDOWN_REPORTS.md).
+## Examples
 
-### Agent Analysis Output
+### Complete Workflow Examples
 
-Agent mode provides structured analysis including:
+#### Basic Leak Detection
+```sh
+# 1. List available snapshots
+npx heap-analyzer list
 
-- **Severity Assessment** (LOW, MEDIUM, HIGH, CRITICAL)
-- **Memory Summary** with object counts and total size
-- **Top Memory Consumers** ranked by size with categories
-- **Leak Detection** with confidence scoring
-- **Actionable Recommendations** for specific fixes
-- **Framework Detection** for targeted advice
+# 2. Run leak detection
+npx heap-analyzer find-leaks --baseline before.heapsnapshot --target after.heapsnapshot
 
-Example findings:
+# 3. If leaks found, analyze specific objects
+npx heap-analyzer trace after.heapsnapshot --node-id 12345
+```
 
-- Large memory consumer: ExternalStringData (1.90MB)
-- Event listener accumulation: 1202 references detected
-- Timer activity: 45 timer references (potential leaks)
-- Memory growth: 9.88MB → 11.66MB between snapshots
+#### Growth Analysis Workflow  
+```sh
+# 1. Compare memory growth
+npx heap-analyzer compare baseline.heapsnapshot target.heapsnapshot
+
+# 2. Interactive exploration of larger snapshot
+npx heap-analyzer heap target.heapsnapshot
+
+# 3. Visual inspection
+npx heap-analyzer view-heap target.heapsnapshot
+```
+
+#### Advanced Analysis
+```sh
+# 1. Run memlab's sophisticated leak detection
+npx heap-analyzer find-leaks --baseline baseline.heapsnapshot --target target.heapsnapshot --final final.heapsnapshot
+
+# 2. Compare different approaches to same feature
+npx memlab diff-leaks --control-snapshot snapshots/approach-a.heapsnapshot --treatment-snapshot snapshots/approach-b.heapsnapshot
+
+# 3. Run analysis plugins for specific insights
+npx heap-analyzer analyze-plugin string-analysis
+```
+
+### Sample Output
+
+**Growth Analysis Output:**
+```
+📊 Growth Analysis:
+   Memory growth: 50.01 MB
+   Growth percentage: 239.7%
+
+🔍 Object Type Analysis:
+   📈 array: +49.74 MB (+13,022 objects)
+   📈 object: +0.20 MB (+13,076 objects)
+
+💡 Growth Pattern Analysis:
+   📊 High memory growth with low object count growth
+   🎯 This suggests existing objects got larger (data accumulation)
+   🔍 Check: Arrays growing, string concatenation, cache buildup
+```
+
+**Memlab Leak Detection Output:**
+```
+Alive objects allocated in target page:
+┌─────────┬────────────────────────────┬─────────────┬───────┬──────────────┐
+│ (index) │ name                       │ type        │ count │ retainedSize │
+├─────────┼────────────────────────────┼─────────────┼───────┼──────────────┤
+│ 0       │ 'Array'                    │ 'object'    │ 13020 │ '52.3MB'     │
+│ 1       │ 'MouseEvent'               │ 'object'    │ 2     │ '2.2KB'      │
+└─────────┴────────────────────────────┴─────────────┴───────┴──────────────┘
+
+No leaks found - Memory growth is legitimate application behavior
+```
 
 ## Development Tools
 
@@ -196,14 +281,39 @@ The Object Content Analyzer provides:
 
 ## CI/CD Integration
 
-Agent mode is perfect for CI/CD pipelines:
+Perfect for automated memory analysis in CI/CD pipelines:
 
 ```yaml
-# Example GitHub Actions step
-- name: Analyze Memory Usage
+# GitHub Actions example
+- name: Memory Leak Detection
   run: |
-    npx heap-analyzer --agent ./heap-snapshot.heapsnapshot
-    # Process the JSON report in ./reports/
+    # Generate snapshots in your test suite
+    npm run test:memory-snapshots
+    
+    # Run leak detection
+    npx heap-analyzer find-leaks --baseline snapshots/baseline.heapsnapshot --target snapshots/after-test.heapsnapshot
+    
+    # Growth analysis for performance monitoring  
+    npx heap-analyzer compare snapshots/baseline.heapsnapshot snapshots/after-test.heapsnapshot
+
+# GitLab CI example
+memory_analysis:
+  script:
+    - npx heap-analyzer find-leaks --snapshot-dir ./test-snapshots/
+    - npx heap-analyzer analyze-plugin string-analysis
+  artifacts:
+    reports:
+      # Save memlab output for later analysis
+    expire_in: 1 week
+```
+
+### Automated Monitoring
+```sh
+# Set up automated snapshot comparison
+npx heap-analyzer find-leaks --baseline production-baseline.heapsnapshot --target latest-build.heapsnapshot
+
+# Check for memory regressions
+npx heap-analyzer compare production-baseline.heapsnapshot feature-branch.heapsnapshot
 ```
 
 ## Interpreting Analysis Results
@@ -248,6 +358,80 @@ Create heap snapshots in Chrome DevTools:
 3. Select "Heap snapshot"
 4. Click "Take snapshot"
 5. Save the `.heapsnapshot` file
+
+## Complete Command Reference
+
+### Core Wrapper Commands
+
+| Command | Description | Memlab Equivalent |
+|---------|-------------|-------------------|
+| `find-leaks` | Memory leak detection | `memlab find-leaks` |
+| `trace <file> --node-id <id>` | Retainer trace analysis | `memlab trace` |
+| `heap <file>` | Interactive heap exploration | `memlab heap` |
+| `view-heap <file>` | Heap visualization | `memlab view-heap` |
+| `analyze-plugin <plugin>` | Run analysis plugins | `memlab analyze` |
+| `compare <baseline> <target>` | Growth analysis | *(Our enhancement)* |
+| `analyze <file>` | Single snapshot analysis | *(Our enhancement)* |
+| `list` | List available snapshots | *(Our enhancement)* |
+
+### Node.js Server Commands
+
+| Command | Description | Use Case |
+|---------|-------------|----------|
+| `node-snapshot --endpoint <url>` | Take snapshot via HTTP | Production monitoring |
+| `node-snapshot --pid <pid>` | Take snapshot via process signal | Development debugging |
+| `node-monitor --pid <pid>` | Auto-monitor memory usage | Continuous monitoring |
+| `node-load-test <url>` | Load test with snapshots | Performance testing |
+
+### Advanced Memlab Commands (Direct Access)
+
+```sh
+# Advanced leak detection with filtering
+npx memlab find-leaks --baseline snapshots/baseline.heapsnapshot --target snapshots/target.heapsnapshot --trace-object-size-above 1000000
+
+# Compare leak sets between different implementations  
+npx memlab diff-leaks --control-snapshot snapshots/old-version.heapsnapshot --treatment-snapshot snapshots/new-version.heapsnapshot
+
+# Machine learning based leak clustering
+npx memlab find-leaks --baseline snapshots/baseline.heapsnapshot --target snapshots/target.heapsnapshot --ml-clustering
+
+# Trace specific patterns
+npx memlab find-leaks --baseline snapshots/baseline.heapsnapshot --target snapshots/target.heapsnapshot --trace-contains "EventListener"
+
+# Interactive heap exploration with specific node focus
+npx memlab view-heap --snapshot snapshots/large-heap.heapsnapshot --node-id 12345
+```
+
+### File Path Resolution
+
+All commands support smart path resolution:
+
+```sh
+# These are equivalent:
+npx heap-analyzer find-leaks --baseline baseline.heapsnapshot --target target.heapsnapshot
+npx heap-analyzer find-leaks --baseline ./snapshots/baseline.heapsnapshot --target ./snapshots/target.heapsnapshot
+npx heap-analyzer find-leaks --baseline /absolute/path/to/baseline.heapsnapshot --target /absolute/path/to/target.heapsnapshot
+
+# Directory mode automatically finds files:
+npx heap-analyzer find-leaks --snapshot-dir ./snapshots/
+```
+
+### Common Use Cases
+
+**Debugging Memory Leaks:**
+1. `heap-analyzer find-leaks --baseline before.heapsnapshot --target after.heapsnapshot`
+2. `heap-analyzer trace after.heapsnapshot --node-id <leaked-object-id>`
+3. `heap-analyzer heap after.heapsnapshot` (for interactive exploration)
+
+**Performance Analysis:**
+1. `heap-analyzer compare baseline.heapsnapshot optimized.heapsnapshot`
+2. `heap-analyzer analyze-plugin string-analysis`
+3. `npx memlab diff-leaks --control-snapshot baseline.heapsnapshot --treatment-snapshot optimized.heapsnapshot`
+
+**Development Workflow:**
+1. `heap-analyzer list` (see available snapshots)
+2. `heap-analyzer find-leaks --snapshot-dir ./snapshots/` (auto-detect and analyze)
+3. `heap-analyzer view-heap latest.heapsnapshot` (visual inspection)
 
 ## License
 

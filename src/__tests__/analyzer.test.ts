@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { analyzeHeapSnapshot, listSnapshots } from '../src/analyzer';
+import { analyzeHeapSnapshot, listSnapshots } from '../analyzer';
 
 // Mock @memlab/core
 jest.mock('@memlab/core', () => ({

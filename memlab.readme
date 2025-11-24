@@ -1,0 +1,69 @@
+Snapshot diff and leak candidates
+
+MemLab compares a baseline snapshot (before the action) and a target snapshot (after the action) – and normally a final snapshot (after cleanup) – to compute which objects were allocated by the action and remained alive.  Concretely, memlab computes the set of objects present in Target but not in Baseline, and then intersects that with the Final snapshot (if provided).  In set terms, leaked candidates = (Target ∖ Baseline) ∩ Final ￼.  In practice, if only Baseline and Target are given, memlab treats objects present in Target but not in Baseline as potential leaks (ideally the user supplies a final snapshot to filter out objects freed during cleanup).
+
+MemLab identifies object identity by the heap snapshot’s internal node IDs and object “names”.  It essentially loads both snapshots into its heap-graph model and performs a graph-diff: any node in the Target snapshot that has no corresponding node in the Baseline snapshot is considered “new”.  Those new objects are then checked against the Final snapshot (if available) to see if they still exist.  Each object that survives is marked as a leak candidate (“allocated by the target but not released afterwards” ￼).
+
+Heap metrics analyzed
+
+For each heap object in the snapshots, memlab gathers standard V8 heap metrics:
+	•	Shallow size and retained size (in bytes):  The self_size (the memory the object itself occupies) and the retained_size (the total memory that would be freed if this object were collected).  MemLab computes retained sizes by building a dominator tree of the heap graph – essentially running the dominator/RCA algorithm on the GC root graph ￼.  (Dominators and retained sizes are included in the output traces ￼.)
+	•	Node type and constructor name: Each object has a V8 type (e.g. object, array, closure, code, native, string, etc) and a constructor name (for JS objects) or value (for strings).  This is shown in traces (e.g. [Array], [EventListener], etc) and helps classify the leak.
+	•	GC root status: memlab records which nodes are GC roots (e.g. the Window object, global contexts, or closure roots).  Any path to a leaked object will start from a GC root.
+	•	Reference edges:  For each object, memlab tracks all incoming and outgoing references (properties, internal pointers, array elements, etc).  Each edge has a name or index (property key, array index or “internal” tag) and type.
+	•	Location (if present):  If the heap snapshot contains debug metadata, memlab records each object’s allocation site (script URL and line/column) via the IHeapLocation info.  This can help trace leaks back to code.
+	•	Custom flags:  The IHeapNode includes a built-in is_detached flag indicating if the object is a detached DOM node or an unmounted React Fiber node ￼.  This is critical for built-in leak heuristics (see below).
+
+Retainer paths and traces
+
+For each leak candidate object, MemLab finds a retainer trace: the chain of references from a GC root down to that object.  Internally, MemLab performs a breadth-first search (BFS) from all GC roots to discover the shortest path to each reachable node.  Each heap node gets a pathEdge pointer to its parent on the shortest path to a root.  Then to produce a trace, memlab walks back from the leaked node via pathEdge up to a root.
+
+This retainer path shows why the object is still alive: every step is a reference keeping it in memory.  For example, the CLI output might show:
+
+[Window] (native) @id [8.3MB]  
+  --20 (element)--> [InternalNode] (native) @id [8.3MB]  
+  --8 (element)--> [InternalNode] (native) @id [8.3MB]  
+  --1 (element)--> [EventListener] (native) @id [8.3MB]  
+  --1 (element)--> [V8EventListener] (native) @id [8.3MB]  
+  --1 (element)--> [<function scope>] (object) @id [8.3MB]  
+  --bigArray (variable)--> [Array] (object) @id [8.3MB]  
+  --elements (internal)--> [(object elements)] (array) @id [8.3MB]  
+
+Here each “—>” shows a reference (by name or index) leading to the leaked object.  (This example is from MemLab’s own demo CLI output ￼.)
+
+MemLab prints one retainer trace per cluster of similar leaks (see clustering below).  These traces include the object’s retained size at each step ￼.  By examining a trace, a developer can identify which reference should have been cleared to allow GC.  The memlab blog notes: “MemLab traverses the heap and generates retainer traces for each leaked object” ￼.
+
+Leak filtering and heuristics
+
+Not every surviving object is necessarily a problematic leak; some may be benign (caches, singletons, etc).  MemLab allows filtering these.  By default, MemLab applies built-in leak filters that specifically look for known leak patterns: in particular, detached DOM nodes and unmounted React Fiber nodes.  Both of these carry is_detached = true in the snapshot.  MemLab’s default leak detector “considers detached DOM elements and unmounted Fiber nodes (detached from the React Fiber tree) as memory leaks” ￼.  In other words, any object flagged is_detached is treated as a leak unless filtered out.  This helps avoid false positives in web apps using React or manipulating the DOM.
+
+Developers can customize filtering via a leak filter callback.  With the --leak-filter option (or API hooks), memlab will invoke a user-supplied function on each leak candidate object.  The callback receives the object node and can inspect its properties (type, name, retained size, etc) and return true/false to mark it as a true leak.  For example, one could filter out objects by constructor, or require a minimum retained size, or exclude known caching patterns.  If no filter is provided, the built-in filter as above is used.  In short, memlab’s heuristics and filters let the user cherry-pick which unreleased objects to report as leaks ￼ ￼.
+
+Noise and expected growth
+
+Some objects may grow or persist over multiple snapshots without indicating a bug.  MemLab handles such “noise” via its differencing logic and by thresholds: since it diffs against Baseline, existing long-lived objects (present in Baseline) are ignored entirely.  Only new objects from the Target phase are considered.  Also, MemLab provides command-line thresholds to suppress minor changes.  For example, --trace-object-size-above N will only consider objects whose retained size exceeds N bytes as leaks ￼.  Likewise, --ignore-leak-cluster-size-below N lets MemLab ignore an entire cluster of leaks whose aggregated retained size is below N ￼.  These options let users filter out trivial or expected growth (e.g. small buffers, log caches, or one-time initializations).
+
+In summary, memlab identifies leak candidates by diffing, then refines that set using built-in and user-provided filters.  This dual strategy (baseline diff and filters) helps eliminate both historical objects and known benign allocations.
+
+Clustering leaked objects
+
+If an action leaks many objects, it can overwhelm the report.  MemLab therefore clusters leaks by similarity of their retainer trace.  Leaks that have essentially the same reference path from a root are grouped together.  By default, memlab uses heuristic clustering on the trace strings (grouping identical or nearly identical chains), but it also supports an ML-based clustering (--ml-clustering) using techniques like TF-IDF and DBSCAN to group semantically similar traces ￼.
+
+Each cluster is represented by a single “representative” trace in the output.  The CLI shows, for the cluster: the number of similar objects (e.g. --20 (element)-->) and the total retained size of the cluster (“Similar leaks in this run: X; Retained size: YMB”) ￼.  The example output above shows the cluster size and retained size in the header lines.  Clustering dramatically reduces noise: instead of 100 copies of the same trace, you see one trace and learn there are 100 similar leaks.
+
+Output and data structures
+
+MemLab’s find-leaks produces a console report and also keeps structured data in its run directory.  The console output is human-readable text (as shown above) and is backed up to a file for record-keeping.  (The API counterpart, findLeaks(), returns a structured array of leak info instead of plain text ￼.)
+
+Specifically: MemLab creates (or uses) a working directory (--work-dir or default) containing the snapshots and metadata.  In a typical MemLab run, you’ll find:
+	•	data/cur/s1.heapsnapshot, s2.heapsnapshot, s3.heapsnapshot: the raw baseline/target/final dumps.
+	•	data/cur/snap-seq.json: metadata linking steps to snapshot files.
+	•	data/cur/run-meta.json: optional run metadata (browser args, etc).
+
+After running memlab find-leaks, the console shows summaries: number of leaks found, cluster counts, and each cluster’s retainer path.  You can also call getConsoleBackupFile() (API) to retrieve the full text.  If heap usage steps were recorded, memlab can generate a small “pixel chart” of memory over time.
+
+For programmatic use, findLeaks() (or findLeaksBySnapshotFilePaths) returns an array of ISerializedInfo objects (one per leak cluster) containing details like the path, retained size, and involved node IDs ￼.  This allows automated tools to consume the leak report.
+
+In summary, memlab’s comparison workflow is: load snapshots into IHeapSnapshot graphs (with node metrics), compute (Target ∖ Baseline) ∩ Final to find leak candidates, apply leak filters (built-in for DOM/React plus any user filters), compute shortest-path traces to GC roots for each candidate, cluster the traces by similarity, and print one representative retainer trace per cluster along with counts and retained sizes ￼ ￼. The output (console and optional JSON) highlights the leaked objects’ types, sizes, and reference chains, making it clear what is leaked and why it is still reachable.
+
+Sources: MemLab documentation and Meta engineering descriptions ￼ ￼ ￼ ￼ ￼, which detail the snapshot diff formula, retainer traces, filtering logic, clustering, and output of memlab find-leaks.
