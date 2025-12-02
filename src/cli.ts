@@ -102,14 +102,7 @@ const { values, positionals } = parseArgs({
       type: 'boolean',
       description: 'Open browser with DevTools'
     },
-    'auto-download': {
-      type: 'boolean',
-      description: 'Automatically download heap snapshots'
-    },
-    'download-interval': {
-      type: 'string',
-      description: 'Auto-download interval (e.g., 30s, 1m)'
-    },
+
     'output-dir': {
       type: 'string',
       description: 'Directory to save snapshots'
@@ -145,15 +138,17 @@ Commands:
   heap <file>              Interactive heap exploration (wrapper for memlab heap)
   view-heap <file>         Heap visualization (wrapper for memlab view-heap)
   lens <file>              Web-based heap visualization with MemLens
-  monitor <url>            Monitor running application with automatic heap snapshots
-  browser <url>            Launch browser with heap monitoring and script injection
+  monitor <url>            Monitor running application with heap snapshots
+  browser <url>            Launch browser with manual heap monitoring (UI-controlled snapshots)
   analyze-plugin <plugin>  Run analysis plugin (wrapper for memlab analyze)
   inspect-object <file>    Inspect specific objects using memlab IDs (enhanced)
   memlab-inspect <file>    Native memlab object inspection with detailed analysis
+  investigate <file>       Inspect object then trace its retention path
   node-snapshot            Take heap snapshot from running Node.js process  
   node-monitor             Monitor Node.js process memory and auto-snapshot
   node-load-test <url>     Run load test with automatic heap snapshot collection
   enrich <report>          Enrich analysis report with detailed object inspections
+  generate-report <json>   Generate markdown report from JSON analysis data
   list                     List available snapshots in ./snapshots directory
 
 Complete memlab wrapper - all memlab functionality with better dev experience!
@@ -215,12 +210,16 @@ Examples:
   heap-analyzer enrich ANALYSIS-SUMMARY.md
   heap-analyzer enrich ANALYSIS-SUMMARY.md --snapshot-file final.heapsnapshot --max-objects 15
   
+  # Generate markdown report from JSON
+  heap-analyzer generate-report ANALYSIS-DATA-2025-01-01T12-00-00-000Z.json
+  heap-analyzer generate-report ./snapshots/*/ANALYSIS-DATA-*.json
+  
   # Launch browser with script injection
   heap-analyzer browser http://localhost:3000
   heap-analyzer browser http://localhost:3000 --inject-script "console.log('Hello World!')"
   heap-analyzer browser http://localhost:3000 --devtools --inject-script "window.myDebugger = true"
-  heap-analyzer browser https://slow-site.com --timeout 2m --wait-until load
-  heap-analyzer browser https://app.com --auto-download --timeout 90s
+  heap-analyzer browser https://slow-site.com --wait-until load
+  heap-analyzer browser https://app.com --devtools --inject-script "window.debugMode = true"
 
 Snapshots Directory:
   Place .heapsnapshot files in ./snapshots/ for easy access
@@ -316,17 +315,123 @@ if (command === 'list') {
   
   console.log(`\n🔍 Analyzing retainer trace for node ${nodeId}`);
   await runMemlabTrace(file, nodeId);
+} else if (command === 'investigate') {
+  const invFile = positionals[1];
+  const objectId = values['object-id'];
+
+  if (!invFile) {
+    console.error('❌ Error: investigate requires a snapshot file');
+    console.log('Usage: heap-analyzer investigate <file> --object-id <@id>');
+    process.exit(1);
+  }
+  if (!objectId) {
+    console.error('❌ Error: investigate requires an object ID');
+    console.log('Usage: heap-analyzer investigate <file> --object-id <@id>');
+    process.exit(1);
+  }
+
+  console.log(`\n🔎 Investigating object ${objectId} in ${invFile}`);
+  const { inspectMemlabObject, fetchMemlabObjectData } = await import('./memlabObjectInspectorSimple.js');
+  const objectData = await fetchMemlabObjectData(invFile, objectId);
+  if (objectData) {
+    // Display formatted output (reuse existing function)
+    await inspectMemlabObject(invFile, objectId); // prints formatted summary
+  } else {
+    console.log('⚠️ Failed to fetch object data for enrichment');
+  }
+
+  // If the objectId starts with @, strip for memlab trace
+  const nodeId = String(objectId).replace(/^@/, '');
+  console.log(`\n🧭 Retention path for ${objectId}`);
+  const { runMemlabTraceCapture } = await import('./analyzer.js');
+  const traceResult = await runMemlabTraceCapture(invFile, nodeId);
+  // Print raw trace lines for user (retain original appearance)
+  const traceLines = traceResult.raw.split(/\r?\n/).filter(l => l.trim());
+  // Keep only retention path section lines for display consistency
+  const displayLines = traceLines.filter(l => l.startsWith('[') || l.trim().startsWith('--'));
+  displayLines.forEach(l => console.log(l));
+  console.log('\n✅ MemLab retainer trace analysis complete!');
+
+  console.log('\n✅ Investigation complete');
+  // Attempt to update corresponding JSON analysis report in same directory (add investigation details)
+  try {
+    const fs = await import('node:fs');
+    const pathMod = await import('node:path');
+    const dir = pathMod.default.dirname(invFile);
+    const files = fs.default.readdirSync(dir).filter(f => f.startsWith('ANALYSIS-DATA-') && f.endsWith('.json'));
+    if (files.length > 0) {
+      // Use the most recent JSON (sort by mtime)
+      const filesWithTime = files.map(f => ({
+        name: f,
+        time: fs.default.statSync(pathMod.default.join(dir, f)).mtimeMs
+      })).sort((a,b) => b.time - a.time);
+      const jsonPath = pathMod.default.join(dir, filesWithTime[0].name);
+      const raw = fs.default.readFileSync(jsonPath, 'utf8');
+      let data: any = JSON.parse(raw);
+      // Mark memory object as investigated
+      if (Array.isArray(data.memoryObjects)) {
+        const targetObj = data.memoryObjects.find((o: any) => o.id === nodeId);
+        if (targetObj) {
+          targetObj.investigated = true;
+        }
+      }
+      // Append investigation history
+      if (!Array.isArray(data.investigations)) {
+        data.investigations = [];
+      }
+      const investigationEntry: any = {
+        objectId: '@' + nodeId,
+        snapshot: invFile,
+        investigatedAt: new Date().toISOString()
+      };
+      if (objectData) {
+        investigationEntry.objectDetails = {
+          id: objectData.id,
+          name: objectData.name,
+          type: objectData.type,
+          selfSizeBytes: objectData.selfsize,
+          retainedSizeBytes: objectData.retainedSize,
+          topReferences: (objectData.references || []).slice(0, 10).map(r => ({ name: r.name, toNode: r.toNode, type: r.type })),
+          topReferrers: (objectData.referrers || []).slice(0, 10).map(r => ({ name: r.name, fromNode: r.fromNode, type: r.type }))
+        };
+      }
+      if (traceResult.path && traceResult.path.length) {
+        investigationEntry.retentionPath = traceResult.path;
+      }
+      // Deduplicate: replace any previous investigation for this objectId+snapshot
+      const idx = data.investigations.findIndex((entry: any) => entry.objectId === investigationEntry.objectId && entry.snapshot === investigationEntry.snapshot);
+      if (idx !== -1) {
+        data.investigations[idx] = investigationEntry;
+      } else {
+        data.investigations.push(investigationEntry);
+      }
+      // Bump schema version minor if present
+      if (data.schema && typeof data.schema.version === 'string') {
+        const parts = data.schema.version.split('.');
+        if (parts.length === 3) {
+          const minor = parseInt(parts[1]) || 0;
+          parts[1] = String(minor + 1); // increment minor
+          data.schema.version = parts.join('.');
+        }
+      }
+      fs.default.writeFileSync(jsonPath, JSON.stringify(data, null, 2));
+      console.log(`\n📝 Updated JSON report: ${pathMod.default.basename(jsonPath)} (marked @${nodeId} investigated)`);
+    } else {
+      console.log('\nℹ️ No JSON analysis report found in snapshot directory to update');
+    }
+  } catch (err) {
+    console.log('\n⚠️ Failed to update JSON report:', err);
+  }
+  process.exit(0);
 } else if (command === 'heap') {
-  const file = positionals[1];
-  
-  if (!file) {
+  const heapFile = positionals[1];
+  if (!heapFile) {
     console.error('❌ Error: heap requires a snapshot file');
     console.log('Usage: heap-analyzer heap <file>');
     process.exit(1);
   }
-  
   console.log(`\n🔍 Starting interactive heap exploration`);
-  await runMemlabHeap(file);
+  await runMemlabHeap(heapFile);
 } else if (command === 'view-heap') {
   const file = positionals[1];
   const nodeId = values['node-id'];
@@ -376,7 +481,8 @@ if (command === 'list') {
     console.error('❌ Error: browser requires a URL');
     console.log('Usage: heap-analyzer browser <url>');
     console.log('Example: heap-analyzer browser http://localhost:3000');
-    console.log('Options: --inject-script, --devtools');
+    console.log('Options: --inject-script, --devtools, --wait-until');
+    console.log('💡 Manual mode: Use floating UI buttons to control snapshots');
     process.exit(1);
   }
   
@@ -386,8 +492,7 @@ if (command === 'list') {
     url,
     injectScript: values['inject-script'],
     devtools: values.devtools,
-    autoDownload: values['auto-download'],
-    downloadInterval: values['download-interval'],
+
     outputDir: values['output-dir'],
     waitUntil: values['wait-until'] as any,
     generateReports: values['memlab-reports']
@@ -470,6 +575,18 @@ if (command === 'list') {
     maxObjects: values['max-objects'] ? parseInt(values['max-objects']) : 10,
     backup: values.backup !== false
   });
+} else if (command === 'generate-report') {
+  const jsonPath = positionals[1];
+  
+  if (!jsonPath) {
+    console.error('❌ Error: generate-report requires a JSON file path');
+    console.log('Usage: heap-analyzer generate-report <ANALYSIS-DATA-*.json>');
+    console.log('Example: heap-analyzer generate-report ./snapshots/browser-*/ANALYSIS-DATA-*.json');
+    process.exit(1);
+  }
+  
+  const { generateMarkdownReport } = await import('./reportGenerator.js');
+  await generateMarkdownReport(jsonPath);
 } else if (command === 'analyze' || file) {
   if (!file) {
     console.error('❌ Error: Please provide a heap snapshot file');

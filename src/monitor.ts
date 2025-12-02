@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createFloatingUI, type FloatingUICallbacks } from './ui/index.js';
 
 export interface MonitorOptions {
   url: string;
-  interval?: string; // e.g., '30s', '1m'
-  duration?: string; // e.g., '5m', '10m'
+  interval?: string; // DEPRECATED: Manual mode only - user controls timing
+  duration?: string; // DEPRECATED: Manual mode only - user controls timing
   scenarios?: string; // 'shopping-flow', 'navigation', 'forms'
   actions?: string[]; // ['click', 'navigate', 'scroll']
   outputDir?: string;
@@ -14,6 +15,7 @@ export interface MonitorOptions {
 
 export async function monitorApplication(options: MonitorOptions): Promise<void> {
   console.log('🚀 Starting heap monitoring for:', options.url);
+  console.log('⚡ Manual mode: User controls all snapshots via UI');
   
   // Install puppeteer if needed
   await ensurePuppeteerInstalled();
@@ -374,16 +376,16 @@ export interface BrowserOptions {
   injectScript?: string;
   devtools?: boolean;
   headless?: boolean;
-  autoDownload?: boolean;
-  downloadInterval?: string;
+  autoDownload?: boolean; // DEPRECATED: Manual mode only - always disabled
+  downloadInterval?: string; // DEPRECATED: Manual mode only - not used
   outputDir?: string;
-  timeout?: string;
   waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2';
   generateReports?: boolean;
 }
 
 export async function launchBrowserWithMonitoring(options: BrowserOptions): Promise<void> {
   console.log('🚀 Starting browser with heap monitoring for:', options.url);
+  console.log('⚡ Manual mode: User controls all snapshots via UI buttons');
   
   // Install puppeteer if needed
   await ensurePuppeteerInstalled();
@@ -394,15 +396,30 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
   const browser = await puppeteer.default.launch({
     headless: false,  // Always visible browser for best user experience
     devtools: options.devtools || false,
+    // Remove automation indicators for clean UI
+    ignoreDefaultArgs: ['--enable-automation'],
+    // Set default viewport to null so it matches window size
+    defaultViewport: null,
     args: [
       '--no-sandbox', 
       '--disable-setuid-sandbox', 
       '--disable-dev-shm-usage',
+      '--disable-infobars',  // Remove info bars
+      '--window-size=1920,1080',  // Full-size browser window like React Scan
       '--enable-precise-memory-info'  // Enable detailed memory info
     ]
   });
   
+  // Close the default about:blank page that Puppeteer creates
+  const pages = await browser.pages();
+  if (pages.length > 0) {
+    await pages[0].close();
+  }
+  
   const page = await browser.newPage();
+  
+  // defaultViewport: null means viewport automatically matches window size
+  // No manual viewport setting needed - this prevents scrollbars
   
   // No timeout - let user control when to close
   const waitUntil = options.waitUntil || 'load'; // Default to 'load' - most compatible for complex sites
@@ -472,454 +489,24 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
     console.log('  heapAnalyzer.startMemoryWatcher() - Start monitoring');
   });
 
-  // Inject a simple floating UI panel
-  const floatingUIScript = `
-    // Simple floating UI for heap analysis
-    function createFloatingUI() {
-      // Only create once
-      if (document.getElementById('heap-analyzer-ui')) return;
-
-      // Create the floating panel
-      const panel = document.createElement('div');
-      panel.id = 'heap-analyzer-ui';
-      panel.style.cssText = \`
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        width: 280px;
-        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-        border-radius: 12px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        z-index: 999999;
-        color: white;
-        font-size: 14px;
-        padding: 16px;
-      \`;
-
-      // Create the UI content
-      panel.innerHTML = \`
-        <div id="drag-header" style="margin-bottom: 16px; text-align: center; cursor: move; padding: 4px; border-radius: 8px; transition: background-color 0.2s; position: relative;">
-          <div style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); opacity: 0.5; font-size: 12px;">⋮⋮</div>
-          <h3 style="margin: 0; font-size: 16px;">🚀 Heap Analyzer</h3>
-          <div style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); opacity: 0.5; font-size: 12px;">⋮⋮</div>
-        </div>
-        
-        <div style="margin-bottom: 16px;">
-          <div style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-bottom: 8px;">
-            <div id="memory-bar" style="height: 100%; background: linear-gradient(90deg, #4ade80 0%, #f59e0b 70%, #ef4444 100%); width: 0%; transition: width 0.3s ease; border-radius: 3px;"></div>
-          </div>
-          <div id="memory-text" style="font-size: 12px; opacity: 0.8; text-align: center;">
-            Memory: 0 MB / 0 MB
-          </div>
-        </div>
-
-        <div id="workflow-status" style="margin-bottom: 12px; padding: 8px 12px; background: rgba(255,255,255,0.05); border-radius: 6px; font-size: 12px; text-align: center;">
-          <div id="workflow-text">Ready to start heap analysis</div>
-          <div id="workflow-progress" style="height: 2px; background: rgba(255,255,255,0.1); margin-top: 6px; border-radius: 1px;">
-            <div id="progress-bar" style="height: 100%; background: #4ade80; width: 0%; transition: width 0.3s ease; border-radius: 1px;"></div>
-          </div>
-        </div>
-
-        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
-          <button id="snapshot-before" style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.4); border-left: 4px solid #3b82f6; border-radius: 8px; color: white; cursor: pointer; font-size: 14px; min-height: 44px;">
-            <span>📷</span>
-            <div style="flex: 1; text-align: left;">
-              <div style="font-weight: 500;">1. Take Before Snapshot</div>
-              <div id="before-time" style="opacity: 0.7; font-size: 11px;">Click to start</div>
-            </div>
-          </button>
-          
-          <button id="snapshot-after" style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-left: 4px solid #6b7280; border-radius: 8px; color: #9ca3af; cursor: not-allowed; font-size: 14px; min-height: 44px;" disabled>
-            <span>📊</span>
-            <div style="flex: 1; text-align: left;">
-              <div style="font-weight: 500;">2. Perform Actions</div>
-              <div id="after-time" style="opacity: 0.7; font-size: 11px;">Take before snapshot first</div>
-            </div>
-          </button>
-          
-          <button id="snapshot-final" style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-left: 4px solid #6b7280; border-radius: 8px; color: #9ca3af; cursor: not-allowed; font-size: 14px; min-height: 44px;" disabled>
-            <span>🎯</span>
-            <div style="flex: 1; text-align: left;">
-              <div style="font-weight: 500;">3. Final + Analysis</div>
-              <div id="final-time" style="opacity: 0.7; font-size: 11px;">Complete previous steps</div>
-            </div>
-          </button>
-
-          <button id="close-browser" style="display: none; align-items: center; gap: 12px; padding: 12px 16px; background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.4); border-left: 4px solid #ef4444; border-radius: 8px; color: white; cursor: pointer; font-size: 14px; min-height: 44px;">
-            <span>🚪</span>
-            <div style="flex: 1; text-align: left;">
-              <div style="font-weight: 500;">4. Close & Analyze</div>
-              <div style="opacity: 0.7; font-size: 11px;">Analysis complete!</div>
-            </div>
-          </button>
-        </div>
-
-        <div style="display: flex; gap: 8px;">
-          <button id="gc-btn" style="flex: 1; padding: 8px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-left: 3px solid #ef4444; border-radius: 6px; color: white; cursor: pointer; font-size: 12px;">
-            🗑️ GC
-          </button>
-          <button id="dom-btn" style="flex: 1; padding: 8px 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-left: 3px solid #8b5cf6; border-radius: 6px; color: white; cursor: pointer; font-size: 12px;">
-            🏗️ DOM
-          </button>
-        </div>
-      \`;
-
-      document.body.appendChild(panel);
-
-      // Add drag functionality
-      let isDragging = false;
-      let dragStartX = 0;
-      let dragStartY = 0;
-      let panelStartX = 0;
-      let panelStartY = 0;
-
-      const dragHeader = document.getElementById('drag-header');
-      
-      if (dragHeader) {
-        dragHeader.addEventListener('mousedown', (e) => {
-          isDragging = true;
-          dragStartX = e.clientX;
-          dragStartY = e.clientY;
-          
-          // Get current panel position
-          const rect = panel.getBoundingClientRect();
-          panelStartX = rect.left;
-          panelStartY = rect.top;
-          
-          // Change cursor and header appearance
-          document.body.style.cursor = 'grabbing';
-          dragHeader.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-          
-          // Prevent text selection
-          e.preventDefault();
-        });
-
-        document.addEventListener('mousemove', (e) => {
-          if (!isDragging) return;
-          
-          const deltaX = e.clientX - dragStartX;
-          const deltaY = e.clientY - dragStartY;
-          
-          const newX = panelStartX + deltaX;
-          const newY = panelStartY + deltaY;
-          
-          // Keep panel within viewport bounds
-          const maxX = window.innerWidth - panel.offsetWidth;
-          const maxY = window.innerHeight - panel.offsetHeight;
-          
-          const constrainedX = Math.max(0, Math.min(newX, maxX));
-          const constrainedY = Math.max(0, Math.min(newY, maxY));
-          
-          panel.style.left = constrainedX + 'px';
-          panel.style.top = constrainedY + 'px';
-          panel.style.right = 'auto'; // Remove right positioning when dragging
-        });
-
-        document.addEventListener('mouseup', () => {
-          if (isDragging) {
-            isDragging = false;
-            document.body.style.cursor = '';
-            dragHeader.style.backgroundColor = '';
-          }
-        });
-
-        // Handle touch events for mobile support
-        dragHeader.addEventListener('touchstart', (e) => {
-          if (e.touches.length === 1) {
-            const touch = e.touches[0];
-            isDragging = true;
-            dragStartX = touch.clientX;
-            dragStartY = touch.clientY;
-            
-            const rect = panel.getBoundingClientRect();
-            panelStartX = rect.left;
-            panelStartY = rect.top;
-            
-            dragHeader.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-            e.preventDefault();
-          }
-        });
-
-        document.addEventListener('touchmove', (e) => {
-          if (!isDragging || e.touches.length !== 1) return;
-          
-          const touch = e.touches[0];
-          const deltaX = touch.clientX - dragStartX;
-          const deltaY = touch.clientY - dragStartY;
-          
-          const newX = panelStartX + deltaX;
-          const newY = panelStartY + deltaY;
-          
-          const maxX = window.innerWidth - panel.offsetWidth;
-          const maxY = window.innerHeight - panel.offsetHeight;
-          
-          const constrainedX = Math.max(0, Math.min(newX, maxX));
-          const constrainedY = Math.max(0, Math.min(newY, maxY));
-          
-          panel.style.left = constrainedX + 'px';
-          panel.style.top = constrainedY + 'px';
-          panel.style.right = 'auto';
-          
-          e.preventDefault();
-        });
-
-        document.addEventListener('touchend', () => {
-          if (isDragging) {
-            isDragging = false;
-            dragHeader.style.backgroundColor = '';
-          }
-        });
-      }
-
-      // Workflow state management
-      let workflowStep = 0;
-      const steps = ['before', 'after', 'final', 'complete'];
-
-      function updateWorkflowUI() {
-        const workflowText = document.getElementById('workflow-text');
-        const progressBar = document.getElementById('progress-bar');
-        const beforeBtn = document.getElementById('snapshot-before');
-        const afterBtn = document.getElementById('snapshot-after');
-        const finalBtn = document.getElementById('snapshot-final');
-        const closeBtn = document.getElementById('close-browser');
-
-        const messages = [
-          'Ready to start heap analysis',
-          'Perform your actions, then click "After Snapshot"',
-          'Ready for final snapshot with garbage collection',
-          'Analysis complete! Review results and close browser'
-        ];
-
-        if (workflowText && progressBar) {
-          workflowText.textContent = messages[workflowStep] || messages[0];
-          progressBar.style.width = ((workflowStep / 3) * 100) + '%';
-        }
-
-        // Update button states
-        if (beforeBtn && afterBtn && finalBtn && closeBtn) {
-          // Reset all buttons first
-          [beforeBtn, afterBtn, finalBtn].forEach(btn => {
-            btn.style.background = 'rgba(255,255,255,0.05)';
-            btn.style.borderColor = 'rgba(255,255,255,0.1)';
-            btn.style.borderLeftColor = '#6b7280';
-            btn.style.color = '#9ca3af';
-            btn.style.cursor = 'not-allowed';
-            btn.disabled = true;
-          });
-
-          // Enable current step
-          if (workflowStep === 0) {
-            beforeBtn.style.background = 'rgba(59,130,246,0.2)';
-            beforeBtn.style.borderColor = 'rgba(59,130,246,0.4)';
-            beforeBtn.style.borderLeftColor = '#3b82f6';
-            beforeBtn.style.color = 'white';
-            beforeBtn.style.cursor = 'pointer';
-            beforeBtn.disabled = false;
-          } else if (workflowStep === 1) {
-            afterBtn.style.background = 'rgba(245,158,11,0.2)';
-            afterBtn.style.borderColor = 'rgba(245,158,11,0.4)';
-            afterBtn.style.borderLeftColor = '#f59e0b';
-            afterBtn.style.color = 'white';
-            afterBtn.style.cursor = 'pointer';
-            afterBtn.disabled = false;
-          } else if (workflowStep === 2) {
-            finalBtn.style.background = 'rgba(239,68,68,0.2)';
-            finalBtn.style.borderColor = 'rgba(239,68,68,0.4)';
-            finalBtn.style.borderLeftColor = '#ef4444';
-            finalBtn.style.color = 'white';
-            finalBtn.style.cursor = 'pointer';
-            finalBtn.disabled = false;
-          } else if (workflowStep === 3) {
-            closeBtn.style.display = 'flex';
-          }
-        }
-      }
-
-      // Add functionality
-      function updateMemory() {
-        if (performance.memory) {
-          const memory = performance.memory;
-          const usagePercent = (memory.usedJSHeapSize / memory.jsHeapSizeLimit) * 100;
-          const usedMB = (memory.usedJSHeapSize / (1024 * 1024)).toFixed(1);
-          const limitMB = (memory.jsHeapSizeLimit / (1024 * 1024)).toFixed(1);
-          
-          const memoryBar = document.getElementById('memory-bar');
-          const memoryText = document.getElementById('memory-text');
-          if (memoryBar && memoryText) {
-            memoryBar.style.width = usagePercent + '%';
-            memoryText.textContent = \`Memory: \${usedMB} MB / \${limitMB} MB\`;
-          }
-        }
-      }
-
-      async function takeSnapshot(type) {
-        const btn = document.getElementById(\`snapshot-\${type}\`);
-        const timeDiv = document.getElementById(\`\${type}-time\`);
-        
-        if (btn && timeDiv) {
-          btn.disabled = true;
-          btn.style.opacity = '0.6';
-          
-          try {
-            // Special handling for final snapshot - run garbage collection first
-            if (type === 'final') {
-              console.log('🗑️ Running garbage collection before final snapshot...');
-              timeDiv.textContent = 'Running GC...';
-              
-              // Force garbage collection
-              if (window.heapAnalyzer && window.heapAnalyzer.forceGC) {
-                await window.heapAnalyzer.forceGC();
-              } else {
-                // Fallback GC pressure
-                if ('gc' in window) {
-                  window.gc();
-                }
-                // Create memory pressure to encourage GC
-                for (let i = 0; i < 10; i++) {
-                  const temp = new Array(100000).fill(0);
-                  temp.length = 0;
-                }
-                await new Promise(resolve => setTimeout(resolve, 1000));
-              }
-              
-              console.log('✅ Garbage collection completed');
-            }
-            
-            console.log(\`📸 Taking \${type} snapshot...\`);
-            timeDiv.textContent = 'Taking snapshot...';
-            
-            // Dispatch event for monitor to handle
-            window.dispatchEvent(new CustomEvent('heap-snapshot-requested', {
-              detail: { type, timestamp: Date.now(), memInfo: performance.memory }
-            }));
-            
-            // Call heap analyzer if available
-            if (window.heapAnalyzer && window.heapAnalyzer.takeSnapshot) {
-              await window.heapAnalyzer.takeSnapshot();
-            }
-            
-            // Update UI with completion
-            timeDiv.textContent = new Date().toLocaleTimeString();
-            btn.style.background = 'rgba(34, 197, 94, 0.2)';
-            btn.style.borderColor = 'rgba(34, 197, 94, 0.4)';
-            btn.style.borderLeftColor = '#22c55e';
-            
-            console.log(\`✅ \${type} snapshot completed\`);
-            
-            // Progress workflow
-            if (type === 'before') {
-              workflowStep = 1;
-              timeDiv.textContent = 'Completed - ' + timeDiv.textContent;
-            } else if (type === 'after') {
-              workflowStep = 2;
-              timeDiv.textContent = 'Completed - ' + timeDiv.textContent;
-            } else if (type === 'final') {
-              workflowStep = 3;
-              timeDiv.textContent = 'Completed - ' + timeDiv.textContent;
-            }
-            
-            updateWorkflowUI();
-            
-          } catch (error) {
-            console.error(\`❌ Failed to take \${type} snapshot:\`, error);
-            timeDiv.textContent = 'Error - try again';
-          } finally {
-            btn.disabled = false;
-            btn.style.opacity = '1';
-          }
-        }
-      }
-
-      // Event listeners
-      const beforeBtn = document.getElementById('snapshot-before');
-      const afterBtn = document.getElementById('snapshot-after');
-      const finalBtn = document.getElementById('snapshot-final');
-      const closeBtn = document.getElementById('close-browser');
-      const gcBtn = document.getElementById('gc-btn');
-      const domBtn = document.getElementById('dom-btn');
-      
-      if (beforeBtn) beforeBtn.onclick = () => {
-        if (workflowStep === 0) takeSnapshot('before');
-      };
-      if (afterBtn) afterBtn.onclick = () => {
-        if (workflowStep === 1) takeSnapshot('after');
-      };
-      if (finalBtn) finalBtn.onclick = () => {
-        if (workflowStep === 2) takeSnapshot('final');
-      };
-      
-      if (closeBtn) closeBtn.onclick = () => {
-        console.log('🚪 Closing browser and running analysis...');
-        
-        // Set global flag for monitor to detect
-        window.heapAnalyzerCloseRequested = true;
-        
-        // Dispatch close event for monitor to handle
-        window.dispatchEvent(new CustomEvent('browser-close-requested', {
-          detail: { timestamp: Date.now(), reason: 'workflow-complete' }
-        }));
-        
-        // Show confirmation
-        const workflowText = document.getElementById('workflow-text');
-        if (workflowText) {
-          workflowText.textContent = 'Closing browser and analyzing results...';
-        }
-        
-        console.log('🚪 BROWSER_CLOSE_REQUESTED: Workflow complete, requesting shutdown');
-      };
-      
-      if (gcBtn) gcBtn.onclick = () => {
-        if (window.heapAnalyzer && window.heapAnalyzer.forceGC) {
-          window.heapAnalyzer.forceGC();
-        }
-      };
-      
-      if (domBtn) domBtn.onclick = () => {
-        if (window.heapAnalyzer && window.heapAnalyzer.getDOMInfo) {
-          window.heapAnalyzer.getDOMInfo();
-        }
-      };
-
-      // Initialize workflow UI
-      updateWorkflowUI();
-
-      // Update memory every 2 seconds
-      setInterval(updateMemory, 2000);
-      updateMemory();
-
-      // Add to global heapAnalyzer
-      if (window.heapAnalyzer) {
-        window.heapAnalyzer.ui = {
-          show: () => panel.style.display = 'block',
-          hide: () => panel.style.display = 'none',
-          toggle: () => panel.style.display = panel.style.display === 'none' ? 'block' : 'none',
-          nextStep: () => {
-            if (workflowStep < 3) {
-              workflowStep++;
-              updateWorkflowUI();
-            }
-          },
-          resetWorkflow: () => {
-            workflowStep = 0;
-            updateWorkflowUI();
-          }
-        };
-      }
-
-      console.log('✅ Heap Analyzer UI injected!');
-      console.log('🎮 Step-by-step workflow: Before → After → Final → Close');
-      console.log('📋 Follow the guided workflow for proper heap analysis!');
+  // Generate floating UI script using imported module
+  const callbacks: FloatingUICallbacks = {
+    onSnapshotRequested: async (type) => {
+      console.log(`📸 UI requested ${type} snapshot`);
+      // Snapshot handling is done via event listeners below
+    },
+    onCloseRequested: () => {
+      console.log('🚪 UI requested browser close');
+    },
+    onGarbageCollection: async () => {
+      console.log('🗑️ UI requested garbage collection');
+    },
+    onDOMAnalysis: () => {
+      console.log('🏗️ UI requested DOM analysis');
     }
-
-    // Initialize UI
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', createFloatingUI);
-    } else {
-      createFloatingUI();
-    }
-  `;
+  };
+  
+  const floatingUIScript = createFloatingUI({}, callbacks);
 
   await page.evaluateOnNewDocument(floatingUIScript);
 
@@ -933,7 +520,7 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
     try {
       console.log(`🔄 Navigation attempt ${attempt}/3...`);
       await page.goto(options.url, { 
-        waitUntil
+        waitUntil: 'networkidle0'  // Wait for network to be idle for full content load
       });
       navigationSuccess = true;
       console.log('✅ Navigation successful');
@@ -948,7 +535,7 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
         // Try with more lenient wait condition
         try {
           await page.goto(options.url, { 
-            waitUntil: 'load' // Even more lenient
+            waitUntil: 'domcontentloaded' // More lenient than networkidle0
           });
           navigationSuccess = true;
           console.log('✅ Navigation successful with fallback settings');
@@ -985,14 +572,7 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
   }
   
   console.log('📁 Snapshot directory:', outputDir);
-  
-  // Set up automatic timed snapshots if enabled
-  if (options.autoDownload) {
-    console.log('🔄 Auto-download enabled for timed snapshots');
-    await setupAutoDownload(page, outputDir, options.downloadInterval);
-  }
-  
-  console.log('📸 UI button snapshots will also be auto-downloaded');
+  console.log('📸 Manual mode: Use UI buttons to take snapshots when ready');
 
   // Listen for custom events from the UI (including close requests)
   await page.evaluateOnNewDocument(() => {
@@ -1001,35 +581,17 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
     });
   });
 
+  // Flag to prevent duplicate analysis runs
+  let analysisCompleted = false;
+
   // Listen for snapshot events and close requests from the UI
   page.on('console', async (msg) => {
     const text = msg.text();
     
-    // Handle browser close request
+    // Handle browser close request - just log, let polling handler do the analysis
     if (text.includes('🚪 BROWSER_CLOSE_REQUESTED:')) {
-      console.log('🚪 Browser close requested by UI, starting shutdown...');
-      
-      // Give a moment for any final operations
-      setTimeout(async () => {
-        try {
-          console.log('📊 Running final analysis...');
-          
-          // List snapshots in the directory for analysis
-          const files = fs.readdirSync(outputDir).filter(f => f.endsWith('.heapsnapshot'));
-          if (files.length >= 2) {
-            console.log(`📁 Found ${files.length} snapshots for analysis`);
-            console.log('💡 Use: heap-analyzer find-leaks --snapshot-dir "${outputDir}"');
-          }
-          
-          // Close browser without duplicate completion message
-          await browser.close();
-        } catch (error) {
-          console.error('❌ Error during shutdown:', error);
-          await browser.close();
-        }
-      }, 2000);
-      
-      return;
+      console.log('🚪 Browser close requested by UI, triggering analysis...');
+      return; // Let the polling handler do the full analysis
     }
     
     // Look for our snapshot completion messages
@@ -1099,6 +661,9 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
         });
         
         if (closeRequested) {
+          if (analysisCompleted) return; // Skip if analysis already completed
+          analysisCompleted = true;
+          
           console.log('🚪 Browser close requested by UI, starting shutdown...');
           clearInterval(closePolling);
           
@@ -1217,6 +782,75 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
                         
                         console.log(`📊 Object size analysis saved: ${objectSizePath}`);
                         
+                        // Phase 1: Run additional memlab analyze commands
+                        console.log('🔍 Running Phase 1 analysis: global-variable, detached-DOM, unbound-collection...');
+                        
+                        // Global variable analysis
+                        const globalVarProcess = spawn('npx', [
+                          'memlab', 'analyze', 'global-variable',
+                          '--snapshot', finalSnapshot
+                        ]);
+                        
+                        let globalVarOutput = '';
+                        globalVarProcess.stdout?.on('data', (data) => {
+                          globalVarOutput += data.toString();
+                        });
+                        globalVarProcess.stderr?.on('data', (data) => {
+                          globalVarOutput += data.toString();
+                        });
+                        
+                        await new Promise((resolve) => {
+                          globalVarProcess.on('close', resolve);
+                        });
+                        
+                        const globalVarPath = path.join(rawAnalysisDir, `global-variable-${timestamp}.txt`);
+                        fs.writeFileSync(globalVarPath, globalVarOutput);
+                        console.log(`🌐 Global variable analysis saved: ${globalVarPath}`);
+                        
+                        // Detached DOM analysis
+                        const detachedDOMProcess = spawn('npx', [
+                          'memlab', 'analyze', 'detached-DOM',
+                          '--snapshot', finalSnapshot
+                        ]);
+                        
+                        let detachedDOMOutput = '';
+                        detachedDOMProcess.stdout?.on('data', (data) => {
+                          detachedDOMOutput += data.toString();
+                        });
+                        detachedDOMProcess.stderr?.on('data', (data) => {
+                          detachedDOMOutput += data.toString();
+                        });
+                        
+                        await new Promise((resolve) => {
+                          detachedDOMProcess.on('close', resolve);
+                        });
+                        
+                        const detachedDOMPath = path.join(rawAnalysisDir, `detached-dom-${timestamp}.txt`);
+                        fs.writeFileSync(detachedDOMPath, detachedDOMOutput);
+                        console.log(`🏗️  Detached DOM analysis saved: ${detachedDOMPath}`);
+                        
+                        // Unbound collection analysis
+                        const unboundCollectionProcess = spawn('npx', [
+                          'memlab', 'analyze', 'unbound-collection',
+                          '--snapshot-dir', outputDir
+                        ]);
+                        
+                        let unboundCollectionOutput = '';
+                        unboundCollectionProcess.stdout?.on('data', (data) => {
+                          unboundCollectionOutput += data.toString();
+                        });
+                        unboundCollectionProcess.stderr?.on('data', (data) => {
+                          unboundCollectionOutput += data.toString();
+                        });
+                        
+                        await new Promise((resolve) => {
+                          unboundCollectionProcess.on('close', resolve);
+                        });
+                        
+                        const unboundCollectionPath = path.join(rawAnalysisDir, `unbound-collection-${timestamp}.txt`);
+                        fs.writeFileSync(unboundCollectionPath, unboundCollectionOutput);
+                        console.log(`📈 Unbound collection analysis saved: ${unboundCollectionPath}`);
+                        
                         // Generate readable markdown report
                         console.log('📝 Generating readable report...');
                         const reportGenerator = await import('./reportGenerator.js');
@@ -1260,6 +894,7 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
     // Handle Ctrl+C gracefully
     process.on('SIGINT', async () => {
       console.log('\n🛑 Shutting down browser...');
+      analysisCompleted = true; // Mark as completed to prevent duplicate analysis
       clearInterval(closePolling);
       await browser.close();
       resolve();
@@ -1267,91 +902,7 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
   });
 }
 
-async function setupAutoDownload(page: any, outputDir: string, intervalStr?: string): Promise<void> {
-  const interval = parseTimeString(intervalStr || '30s');
-  let snapshotCount = 0;
-  
-  console.log(`🔄 Starting automatic snapshot downloads every ${intervalStr || '30s'}`);
-  
-  // Take an initial snapshot
-  await downloadHeapSnapshot(page, path.join(outputDir, `initial-${Date.now()}.heapsnapshot`));
-  snapshotCount++;
-  
-  // Set up periodic snapshots
-  const downloadTimer = setInterval(async () => {
-    try {
-      const filename = path.join(outputDir, `auto-${snapshotCount}-${Date.now()}.heapsnapshot`);
-      await downloadHeapSnapshot(page, filename);
-      snapshotCount++;
-    } catch (error) {
-      console.error('❌ Error during auto-download:', error instanceof Error ? error.message : String(error));
-    }
-  }, interval);
-  
-  // Enhanced interactive controls with download capabilities
-  await page.evaluateOnNewDocument((outputDir: string) => {
-    // Override the heapAnalyzer with download capabilities
-    (window as any).heapAnalyzer = {
-      ...((window as any).heapAnalyzer || {}),
-      
-      downloadSnapshot: async (filename?: string) => {
-        console.log('📥 Downloading heap snapshot...');
-        const name = filename || `manual-${Date.now()}.heapsnapshot`;
-        
-        // Trigger download via CDP
-        console.log(`💾 Snapshot download triggered: ${name}`);
-        
-        // We'll handle the actual download in the Node.js context
-        (window as any)._triggerSnapshotDownload = name;
-        return name;
-      },
-      
-      startAutoDownload: (intervalMs = 30000) => {
-        console.log(`⏰ Starting auto-download every ${intervalMs}ms`);
-        return setInterval(() => {
-          (window as any).heapAnalyzer.downloadSnapshot();
-        }, intervalMs);
-      },
-      
-      stopAutoDownload: (timerId: number) => {
-        console.log('⏹️ Stopping auto-download');
-        clearInterval(timerId);
-      }
-    };
-    
-    console.log('📥 Download commands available:');
-    console.log('  heapAnalyzer.downloadSnapshot() - Download snapshot now');
-    console.log('  heapAnalyzer.startAutoDownload(30000) - Start auto-download');
-    console.log('  heapAnalyzer.stopAutoDownload(id) - Stop auto-download');
-  }, outputDir);
-  
-  // Monitor for manual download triggers
-  const checkForDownloads = setInterval(async () => {
-    try {
-      const triggerName = await page.evaluate(() => {
-        const name = (window as any)._triggerSnapshotDownload;
-        delete (window as any)._triggerSnapshotDownload;
-        return name;
-      });
-      
-      if (triggerName) {
-        const filename = path.join(outputDir, triggerName);
-        await downloadHeapSnapshot(page, filename);
-        console.log(`✅ Manual snapshot downloaded: ${triggerName}`);
-      }
-    } catch (error) {
-      // Ignore errors from checking triggers
-    }
-  }, 1000);
-  
-  // Clean up timers when browser closes
-  page.on('close', () => {
-    clearInterval(downloadTimer);
-    clearInterval(checkForDownloads);
-  });
-  
-  console.log('🎮 Interactive download controls injected into browser console');
-}
+// setupAutoDownload function removed - manual mode only
 
 async function downloadHeapSnapshot(page: any, filename: string): Promise<void> {
   try {

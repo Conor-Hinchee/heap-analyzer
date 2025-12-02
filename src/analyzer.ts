@@ -113,12 +113,18 @@ export async function findMemoryLeaks(options: LeakDetectionOptions): Promise<vo
         process.exit(1);
       }
 
-      const files = fs.readdirSync(dir).filter(f => f.endsWith('.heapsnapshot'));
+      const files = fs.readdirSync(dir).filter(f => f.endsWith('.heapsnapshot')).sort();
       
-      // Try to find standard names or use first 3 files
-      baseline = path.join(dir, files.find(f => f.includes('baseline')) || files[0]);
-      target = path.join(dir, files.find(f => f.includes('target')) || files[1]);
-      final = path.join(dir, files.find(f => f.includes('final')) || files[2]);
+      // Try to find standard names (baseline/target/final or before/after/final)
+      const beforeFile = files.find(f => f.includes('before'));
+      const afterFile = files.find(f => f.includes('after'));
+      const finalFile = files.find(f => f.includes('final'));
+      const baselineFile = files.find(f => f.includes('baseline')) || beforeFile;
+      const targetFile = files.find(f => f.includes('target')) || afterFile;
+      
+      baseline = path.join(dir, baselineFile || files[0]);
+      target = path.join(dir, targetFile || files[1]);
+      final = path.join(dir, finalFile || files[files.length - 1]);
 
       if (!baseline || !target || !final) {
         console.error('❌ Need at least 3 .heapsnapshot files in directory');
@@ -340,15 +346,22 @@ export async function runMemlabFindLeaks(options: LeakDetectionOptions): Promise
         process.exit(1);
       }
 
-      const files = fs.readdirSync(dir).filter(f => f.endsWith('.heapsnapshot'));
+      const files = fs.readdirSync(dir).filter(f => f.endsWith('.heapsnapshot')).sort();
       if (files.length < 2) {
         console.error('❌ Need at least 2 .heapsnapshot files for leak detection');
         process.exit(1);
       }
 
-      baseline = path.join(dir, files.find(f => f.includes('baseline')) || files[0]);
-      target = path.join(dir, files.find(f => f.includes('target')) || files[1]);
-      final = files.length >= 3 ? path.join(dir, files.find(f => f.includes('final')) || files[2]) : undefined;
+      // Try to find standard names (baseline/target/final or before/after/final)
+      const beforeFile = files.find(f => f.includes('before'));
+      const afterFile = files.find(f => f.includes('after'));
+      const finalFile = files.find(f => f.includes('final'));
+      const baselineFile = files.find(f => f.includes('baseline')) || beforeFile;
+      const targetFile = files.find(f => f.includes('target')) || afterFile;
+      
+      baseline = path.join(dir, baselineFile || files[0]);
+      target = path.join(dir, targetFile || files[1]);
+      final = files.length >= 3 ? path.join(dir, finalFile || files[files.length - 1]) : undefined;
     } else {
       if (!options.baseline || !options.target) {
         console.error('❌ Need at least baseline and target snapshots');
@@ -471,6 +484,62 @@ export async function runMemlabTrace(snapshotFile: string, nodeId: string): Prom
 
   const args = ['--snapshot', path.resolve(snapshotFile), '--node-id', nodeId];
   await runMemlabCommand('trace', args, 'retainer trace analysis');
+}
+
+// Capture retention trace output programmatically for enrichment
+export async function runMemlabTraceCapture(snapshotFile: string, nodeId: string): Promise<{raw: string, path: any[]}> {
+  const { spawn } = await import('node:child_process');
+  // Smart path resolution
+  if (!snapshotFile.includes('/') && !snapshotFile.includes('\\')) {
+    const snapshotPath = path.join('./snapshots', snapshotFile);
+    if (fs.existsSync(snapshotPath)) snapshotFile = snapshotPath;
+  }
+  if (!fs.existsSync(snapshotFile)) {
+    throw new Error(`Snapshot file not found: ${snapshotFile}`);
+  }
+  const args = ['memlab', 'trace', '--snapshot', path.resolve(snapshotFile), '--node-id', nodeId];
+  return new Promise((resolve) => {
+    let output = '';
+    const child = spawn('npx', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.on('data', (d) => { output += d.toString(); });
+    child.stderr.on('data', (d) => { output += d.toString(); });
+    child.on('close', () => {
+      // Parse retention path lines
+      const pathEntries: any[] = [];
+      const lines = output.split(/\r?\n/);
+      const pathLineRegexRoot = /^\[(.+?)\] \((.+?)\) @(\d+) \[(.+?)\]$/;
+      const pathLineRegex = /^\s+--([^ ]+) \(([^)]+)\)--->\s+\[(.+?)\] \((.+?)\) @(\d+) \[(.+?)\]$/;
+      let rootAdded = false;
+      for (const line of lines) {
+        const rootMatch = line.match(pathLineRegexRoot);
+        if (rootMatch && !rootAdded) {
+          pathEntries.push({
+            edge: 'root',
+            edgeType: 'root',
+            object: rootMatch[1],
+            type: rootMatch[2],
+            nodeId: rootMatch[3],
+            size: rootMatch[4]
+          });
+          rootAdded = true;
+          continue;
+        }
+        const m = line.match(pathLineRegex);
+        if (m) {
+          pathEntries.push({
+            edge: m[1],
+            edgeType: m[2],
+            object: m[3],
+            type: m[4],
+            nodeId: m[5],
+            size: m[6]
+          });
+        }
+      }
+      resolve({ raw: output, path: pathEntries });
+    });
+    child.on('error', () => resolve({ raw: output, path: [] }));
+  });
 }
 
 // Memlab heap wrapper - interactive heap exploration

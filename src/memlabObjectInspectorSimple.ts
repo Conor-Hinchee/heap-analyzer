@@ -13,7 +13,7 @@ interface MemlabObjectReference {
   toNode?: number;
 }
 
-interface MemlabObjectData {
+export interface MemlabObjectData {
   id: number;
   name: string;
   type: string;
@@ -95,6 +95,12 @@ async function runMemlabAnalyzeObjectJson(snapshotFile: string, nodeId: string):
       resolve(null);
     });
   });
+}
+
+// Export a direct data fetcher (no console formatting) for programmatic enrichment
+export async function fetchMemlabObjectData(snapshotFile: string, memlabId: string): Promise<MemlabObjectData | null> {
+  const nodeId = memlabId.replace('@', '');
+  return runMemlabAnalyzeObjectJson(snapshotFile, nodeId);
 }
 
 /**
