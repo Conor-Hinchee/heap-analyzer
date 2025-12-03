@@ -214,6 +214,7 @@ Usage: heap-analyzer [options] [command]
 Commands:
   analyze <file>           Analyze a single heap snapshot file
   compare <baseline> <target>  Compare two snapshots (memory growth analysis)
+  timeline <directory>     Analyze sequential snapshots for memory trends over time
   find-leaks               Run memlab leak detection (wrapper for memlab find-leaks)
   trace <file>             Analyze retainer traces (wrapper for memlab trace --node-id)
   heap <file>              Interactive heap exploration (wrapper for memlab heap)
@@ -236,6 +237,10 @@ Complete memlab wrapper - all memlab functionality with better dev experience!
 
 Single Snapshot Analysis:
   -f, --file <path>        Path to .heapsnapshot file
+
+Timeline Analysis:
+  --snapshot-dir <dir>     Directory containing multiple snapshots
+  --threshold <mb>         Memory growth threshold in MB (default: 10)
 
 Memory Leak Detection:
   --baseline <file>        Baseline snapshot (initial state)
@@ -843,6 +848,12 @@ if (command === 'list') {
       traceAllObjects: true
     });
   }
+} else if (command === 'timeline') {
+  const directory = positionals[1] || values['snapshot-dir'] || '.';
+  const leakThreshold = values.threshold ? parseFloat(values.threshold) : 10;
+  
+  const { timelineCLI } = await import('./timelineAnalyzer.js');
+  await timelineCLI(directory, { leakThreshold });
 } else {
   console.log('\n💡 Use --help to see available commands');
   console.log('💡 Use "list" to see available snapshots');
