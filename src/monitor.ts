@@ -381,6 +381,11 @@ export interface BrowserOptions {
   outputDir?: string;
   waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2';
   generateReports?: boolean;
+  // Advanced launch flags
+  headful?: boolean; // explicit visible mode toggle
+  disableCSP?: boolean; // add flags to relax web security (CSP bypass)
+  noSandbox?: boolean; // control sandbox flags
+  userAgent?: string; // override UA string
 }
 
 export async function launchBrowserWithMonitoring(options: BrowserOptions): Promise<void> {
@@ -394,20 +399,28 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
   
   console.log('🌐 Launching browser...');
   const browser = await puppeteer.default.launch({
-    headless: false,  // Always visible browser for best user experience
+    headless: options.headful === true ? false : (options.headless ?? false),
     devtools: options.devtools || false,
     // Remove automation indicators for clean UI
     ignoreDefaultArgs: ['--enable-automation'],
     // Set default viewport to null so it matches window size
     defaultViewport: null,
-    args: [
-      '--no-sandbox', 
-      '--disable-setuid-sandbox', 
-      '--disable-dev-shm-usage',
-      '--disable-infobars',  // Remove info bars
-      '--window-size=1920,1080',  // Full-size browser window like React Scan
-      '--enable-precise-memory-info'  // Enable detailed memory info
-    ]
+    args: (() => {
+      const args: string[] = [
+        '--disable-infobars',
+        '--window-size=1920,1080',
+        '--enable-precise-memory-info'
+      ];
+      // Sandbox control
+      if (options.noSandbox !== false) {
+        args.push('--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage');
+      }
+      // Disable CSP / relax web security if requested
+      if (options.disableCSP) {
+        args.push('--disable-web-security', '--disable-features=IsolateOrigins,site-per-process');
+      }
+      return args;
+    })()
   });
   
   // Close the default about:blank page that Puppeteer creates
@@ -417,6 +430,16 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
   }
   
   const page = await browser.newPage();
+
+  // Override User-Agent if provided
+  if (options.userAgent) {
+    try {
+      await page.setUserAgent(options.userAgent);
+      console.log('🆔 Using custom User-Agent');
+    } catch (err) {
+      console.log('⚠️ Failed to set User-Agent, continuing with default');
+    }
+  }
   
   // defaultViewport: null means viewport automatically matches window size
   // No manual viewport setting needed - this prevents scrollbars
@@ -512,46 +535,65 @@ export async function launchBrowserWithMonitoring(options: BrowserOptions): Prom
 
   console.log('📡 Navigating to:', options.url);
   
-  // Try navigation with retries
+  // Try navigation with progressive fallback strategy
   let navigationSuccess = false;
   let lastError = null;
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  // Progressive wait conditions from strictest to most lenient
+  const waitStrategies: Array<{condition: any, timeout: number, description: string}> = [
+    { condition: waitUntil, timeout: 30000, description: `${waitUntil} (30s timeout)` },
+    { condition: 'domcontentloaded', timeout: 20000, description: 'domcontentloaded (20s timeout)' },
+    { condition: 'domcontentloaded', timeout: 10000, description: 'domcontentloaded (10s timeout - fastest)' }
+  ];
+
+  for (let attempt = 0; attempt < waitStrategies.length; attempt++) {
+    const strategy = waitStrategies[attempt];
     try {
-      console.log(`🔄 Navigation attempt ${attempt}/3...`);
+      console.log(`🔄 Navigation attempt ${attempt + 1}/${waitStrategies.length}: ${strategy.description}`);
+      
       await page.goto(options.url, { 
-        waitUntil: 'networkidle0'  // Wait for network to be idle for full content load
+        waitUntil: strategy.condition,
+        timeout: strategy.timeout
       });
+      
       navigationSuccess = true;
-      console.log('✅ Navigation successful');
+      console.log(`✅ Navigation successful with ${strategy.description}`);
       break;
     } catch (error) {
       lastError = error;
       const errorMsg = error instanceof Error ? error.message : String(error);
-      console.log(`⚠️ Attempt ${attempt} failed: ${errorMsg}`);
+      console.log(`⚠️ Attempt ${attempt + 1} failed: ${errorMsg.substring(0, 100)}`);
       
-      if (attempt < 3) {
-        console.log('🔄 Retrying with more lenient settings...');
-        // Try with more lenient wait condition
-        try {
-          await page.goto(options.url, { 
-            waitUntil: 'domcontentloaded' // More lenient than networkidle0
-          });
-          navigationSuccess = true;
-          console.log('✅ Navigation successful with fallback settings');
-          break;
-        } catch (retryError) {
-          console.log(`⚠️ Fallback also failed, will retry...`);
-          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait before retry
-        }
+      if (attempt < waitStrategies.length - 1) {
+        console.log('🔄 Trying next fallback strategy...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
   }
 
   if (!navigationSuccess) {
-    console.error('❌ Navigation failed after 3 attempts');
-    console.log('💡 Try using --timeout 2m or --wait-until load for slower sites');
-    throw lastError;
+    console.error('❌ All navigation strategies failed');
+    console.log('💡 The page may have loaded despite errors - checking page state...');
+    
+    // Check if page actually loaded despite timeout
+    try {
+      const pageTitle = await page.title();
+      const pageUrl = page.url();
+      
+      if (pageTitle && pageUrl.includes(new URL(options.url).hostname)) {
+        console.log(`✅ Page appears to be loaded: "${pageTitle}"`);
+        console.log('📝 Continuing with heap monitoring despite navigation timeout...');
+        navigationSuccess = true;
+      }
+    } catch (checkError) {
+      console.error('❌ Page verification failed');
+      throw lastError;
+    }
+    
+    if (!navigationSuccess) {
+      console.log('💡 Try: --wait-until domcontentloaded or --disable-csp');
+      throw lastError;
+    }
   }
   
   console.log('🎉 Browser launched successfully!');

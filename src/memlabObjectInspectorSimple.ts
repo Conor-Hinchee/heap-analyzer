@@ -6,6 +6,10 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
+// Global cache for parsed heap snapshots (memlab's internal parsing is expensive)
+// Key: snapshotPath, Value: Map of objectId -> MemlabObjectData
+const heapSnapshotCache = new Map<string, Map<string, MemlabObjectData>>();
+
 interface MemlabObjectReference {
   name?: string;
   type?: string;
@@ -21,6 +25,13 @@ export interface MemlabObjectData {
   retainedSize: number;
   references?: MemlabObjectReference[];
   referrers?: MemlabObjectReference[];
+}
+
+/**
+ * Clear the snapshot cache (useful for testing or memory management)
+ */
+export function clearSnapshotCache(): void {
+  heapSnapshotCache.clear();
 }
 
 /**
@@ -100,7 +111,29 @@ async function runMemlabAnalyzeObjectJson(snapshotFile: string, nodeId: string):
 // Export a direct data fetcher (no console formatting) for programmatic enrichment
 export async function fetchMemlabObjectData(snapshotFile: string, memlabId: string): Promise<MemlabObjectData | null> {
   const nodeId = memlabId.replace('@', '');
-  return runMemlabAnalyzeObjectJson(snapshotFile, nodeId);
+  
+  // Check cache first
+  let snapshotObjects = heapSnapshotCache.get(snapshotFile);
+  
+  if (snapshotObjects) {
+    const cached = snapshotObjects.get(nodeId);
+    if (cached) {
+      return cached;
+    }
+  } else {
+    // Initialize cache for this snapshot
+    snapshotObjects = new Map<string, MemlabObjectData>();
+    heapSnapshotCache.set(snapshotFile, snapshotObjects);
+  }
+  
+  // Fetch from memlab and cache the result
+  const data = await runMemlabAnalyzeObjectJson(snapshotFile, nodeId);
+  
+  if (data) {
+    snapshotObjects.set(nodeId, data);
+  }
+  
+  return data;
 }
 
 /**

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { parseArgs } from 'node:util';
+import util from 'node:util';
 import { analyzeHeapSnapshot, listSnapshots, compareSnapshots, runMemlabTrace, runMemlabHeap, runMemlabViewHeap, runMemlabAnalyze, runMemlabLens } from './analyzer.js';
 import { monitorApplication } from './monitor.js';
 import path from 'node:path';
@@ -8,6 +8,47 @@ import path from 'node:path';
 const SNAPSHOTS_DIR = './snapshots';
 
 console.log("Heap Analyzer CLI 🚀");
+
+// Polyfill for Node.js < 18.3.0
+const parseArgs = util.parseArgs || function(config: any) {
+  const values: any = {};
+  const positionals: string[] = [];
+  const args = config.args || process.argv.slice(2);
+  
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    
+    if (arg.startsWith('--')) {
+      const key = arg.slice(2);
+      const option = config.options?.[key];
+      
+      if (option?.type === 'boolean') {
+        values[key] = true;
+      } else {
+        values[key] = args[++i];
+      }
+    } else if (arg.startsWith('-')) {
+      const short = arg.slice(1);
+      // Find option with matching short flag
+      const optionKey = Object.keys(config.options || {}).find(
+        k => config.options[k].short === short
+      );
+      
+      if (optionKey) {
+        const option = config.options[optionKey];
+        if (option.type === 'boolean') {
+          values[optionKey] = true;
+        } else {
+          values[optionKey] = args[++i];
+        }
+      }
+    } else {
+      positionals.push(arg);
+    }
+  }
+  
+  return { values, positionals };
+};
 
 const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
@@ -44,6 +85,30 @@ const { values, positionals } = parseArgs({
     'object-id': {
       type: 'string',
       description: 'Object ID to inspect (for inspect-object command)'
+    },
+    depth: {
+      type: 'string',
+      description: 'Depth for deep-dive analysis (default: 3)'
+    },
+    'max-children': {
+      type: 'string',
+      description: 'Max children per level for deep-dive (default: 10)'
+    },
+    'max-nodes': {
+      type: 'string',
+      description: 'Hard cap on total nodes inspected during deep-dive (default: 100)'
+    },
+    'time-budget': {
+      type: 'string',
+      description: 'Time budget in ms for deep-dive before aborting (default: 15000)'
+    },
+    'output-format': {
+      type: 'string',
+      description: 'Output format for deep-dive: tree or json (default: tree)'
+    },
+    'output-file': {
+      type: 'string',
+      description: 'Output file path for deep-dive JSON results'
     },
     plugin: {
       type: 'string',
@@ -111,6 +176,22 @@ const { values, positionals } = parseArgs({
     'wait-until': {
       type: 'string',
       description: 'Wait condition (load, domcontentloaded, networkidle0, networkidle2)'
+    },
+    'headful': {
+      type: 'boolean',
+      description: 'Launch browser in headful (visible) mode'
+    },
+    'disable-csp': {
+      type: 'boolean',
+      description: 'Disable web security to bypass CSP (use carefully)'
+    },
+    'no-sandbox': {
+      type: 'boolean',
+      description: 'Launch Chrome without sandbox (CI/containers)'
+    },
+    'user-agent': {
+      type: 'string',
+      description: 'Override browser User-Agent string'
     },
     'memlab-reports': {
       type: 'boolean',
@@ -187,6 +268,11 @@ Examples:
   heap-analyzer inspect-object after.heapsnapshot --object-id @39263
   heap-analyzer memlab-inspect after.heapsnapshot --object-id @39263
   heap-analyzer trace after.heapsnapshot --node-id 6485
+  
+  # Deep dive analysis - automatically explore object hierarchies
+  heap-analyzer deep-dive snapshot.heapsnapshot --object-id @1096221
+  heap-analyzer deep-dive snapshot.heapsnapshot --object-id @1096221 --depth 5 --max-children 20
+  heap-analyzer deep-dive snapshot.heapsnapshot --object-id @1096221 --output-format json --output-file ./analysis/deep-dive.json
   
   # Memory leak detection with detailed tracing
   heap-analyzer find-leaks --baseline sim-1.heapsnapshot --target sim-2.heapsnapshot --trace-all-objects
@@ -327,30 +413,53 @@ if (command === 'list') {
   if (!objectId) {
     console.error('❌ Error: investigate requires an object ID');
     console.log('Usage: heap-analyzer investigate <file> --object-id <@id>');
+    console.log('\n💡 Runs comprehensive analysis:');
+    console.log('   1. Object inspection (details, references, referrers)');
+    console.log('   2. Retention path tracing (why it\'s held in memory)');
+    console.log('   3. Deep-dive structure (recursive exploration)');
+    console.log('\n📊 Outputs: console logs + JSON report + deep-dive-{id}.json');
     process.exit(1);
   }
 
   console.log(`\n🔎 Investigating object ${objectId} in ${invFile}`);
+  console.log('📋 Running comprehensive analysis: inspect + trace + deep-dive\n');
+  
+  // Step 1: Inspect object
+  console.log('🔍 Step 1/3: Inspecting object details...');
   const { inspectMemlabObject, fetchMemlabObjectData } = await import('./memlabObjectInspectorSimple.js');
   const objectData = await fetchMemlabObjectData(invFile, objectId);
   if (objectData) {
-    // Display formatted output (reuse existing function)
-    await inspectMemlabObject(invFile, objectId); // prints formatted summary
+    await inspectMemlabObject(invFile, objectId);
   } else {
     console.log('⚠️ Failed to fetch object data for enrichment');
   }
 
-  // If the objectId starts with @, strip for memlab trace
+  // Step 2: Trace retention path
   const nodeId = String(objectId).replace(/^@/, '');
-  console.log(`\n🧭 Retention path for ${objectId}`);
+  console.log(`\n🧭 Step 2/3: Tracing retention path for ${objectId}...`);
   const { runMemlabTraceCapture } = await import('./analyzer.js');
   const traceResult = await runMemlabTraceCapture(invFile, nodeId);
-  // Print raw trace lines for user (retain original appearance)
   const traceLines = traceResult.raw.split(/\r?\n/).filter(l => l.trim());
-  // Keep only retention path section lines for display consistency
   const displayLines = traceLines.filter(l => l.startsWith('[') || l.trim().startsWith('--'));
   displayLines.forEach(l => console.log(l));
-  console.log('\n✅ MemLab retainer trace analysis complete!');
+  console.log('\n✅ Retention path analysis complete!');
+  
+  // Step 3: Deep-dive into structure
+  console.log(`\n🔬 Step 3/3: Deep-diving into object structure...`);
+  const pathMod = await import('node:path');
+  const dir = pathMod.default.dirname(invFile);
+  const deepDiveFile = pathMod.default.join(dir, `deep-dive-${nodeId}.json`);
+  
+  const { deepDiveCLI } = await import('./deepDive.js');
+  await deepDiveCLI(invFile, objectId, {
+    maxDepth: 2,
+    maxChildrenPerLevel: 5,
+    maxNodes: 50,
+    timeBudgetMs: 10000,
+    outputFormat: 'json',
+    outputFile: deepDiveFile
+  });
+  console.log(`📁 Deep-dive saved: ${pathMod.default.basename(deepDiveFile)}`);
 
   console.log('\n✅ Investigation complete');
   // Attempt to update corresponding JSON analysis report in same directory (add investigation details)
@@ -398,6 +507,10 @@ if (command === 'list') {
       if (traceResult.path && traceResult.path.length) {
         investigationEntry.retentionPath = traceResult.path;
       }
+      
+      // Add deep-dive reference
+      investigationEntry.deepDiveFile = `deep-dive-${nodeId}.json`;
+      
       // Deduplicate: replace any previous investigation for this objectId+snapshot
       const idx = data.investigations.findIndex((entry: any) => entry.objectId === investigationEntry.objectId && entry.snapshot === investigationEntry.snapshot);
       if (idx !== -1) {
@@ -416,12 +529,57 @@ if (command === 'list') {
       }
       fs.default.writeFileSync(jsonPath, JSON.stringify(data, null, 2));
       console.log(`\n📝 Updated JSON report: ${pathMod.default.basename(jsonPath)} (marked @${nodeId} investigated)`);
+      
+      // Auto-generate markdown report after investigation
+      console.log('\n📊 Auto-generating updated markdown report...');
+      try {
+        const { generateMarkdownReport } = await import('./reportGenerator.js');
+        await generateMarkdownReport(jsonPath);
+        console.log('✅ Markdown report regenerated with investigation data');
+      } catch (reportErr) {
+        console.log('⚠️ Failed to regenerate markdown report:', reportErr);
+      }
     } else {
       console.log('\nℹ️ No JSON analysis report found in snapshot directory to update');
     }
   } catch (err) {
     console.log('\n⚠️ Failed to update JSON report:', err);
   }
+  process.exit(0);
+} else if (command === 'deep-dive') {
+  const ddFile = positionals[1];
+  const objectId = values['object-id'];
+  
+  if (!ddFile) {
+    console.error('❌ Error: deep-dive requires a snapshot file');
+    console.log('Usage: heap-analyzer deep-dive <file> --object-id <@id>');
+    console.log('Options:');
+    console.log('  --depth <num>         Max depth to explore (default: 2)');
+    console.log('  --max-children <num>  Max children per level (default: 5)');
+    console.log('  --max-nodes <num>     Hard cap on nodes visited (default: 100)');
+    console.log('  --time-budget <ms>    Time budget in ms (default: 15000)');
+    console.log('  --output-format <fmt> Output format: tree or json (default: tree)');
+    console.log('  --output-file <path>  Save JSON output to file');
+    console.log('\n💡 Automatically explores object hierarchies to understand data structures');
+    process.exit(1);
+  }
+  
+  if (!objectId) {
+    console.error('❌ Error: deep-dive requires an object ID');
+    console.log('Usage: heap-analyzer deep-dive <file> --object-id <@id>');
+    console.log('💡 Get object IDs from analysis reports or memlab output');
+    process.exit(1);
+  }
+  
+  const { deepDiveCLI } = await import('./deepDive.js');
+  await deepDiveCLI(ddFile, objectId, {
+    maxDepth: values.depth ? parseInt(values.depth) : 2,
+    maxChildrenPerLevel: values['max-children'] ? parseInt(values['max-children']) : 5,
+    maxNodes: values['max-nodes'] ? parseInt(values['max-nodes']) : 100,
+    timeBudgetMs: values['time-budget'] ? parseInt(values['time-budget']) : 15000,
+    outputFormat: (values['output-format'] as 'tree' | 'json') || 'tree',
+    outputFile: values['output-file']
+  });
   process.exit(0);
 } else if (command === 'heap') {
   const heapFile = positionals[1];
@@ -495,7 +653,12 @@ if (command === 'list') {
 
     outputDir: values['output-dir'],
     waitUntil: values['wait-until'] as any,
-    generateReports: values['memlab-reports']
+    generateReports: values['memlab-reports'],
+    // New advanced flags
+    headful: values['headful'] || undefined,
+    disableCSP: values['disable-csp'] || undefined,
+    noSandbox: values['no-sandbox'] || undefined,
+    userAgent: values['user-agent'] || undefined
   });
 } else if (command === 'analyze-plugin') {
   const pluginName = positionals[1];

@@ -3,6 +3,9 @@
   "version": "1.0.4",
   "type": "module",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "bin": {
     "heap-analyzer": "dist/cli.js"
   },

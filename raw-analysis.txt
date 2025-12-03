@@ -1,0 +1,2720 @@
+# 🚨 Memory Analysis of Sweaters (local.express.com)
+
+**Generated:** 12/2/2025 at 1:40:16 PM  
+**Session:** 2025-12-02T18-32-55-510Z  
+**Target:** Sweaters ([https://local.express.com:8080/mens-clothing/sweaters/cat1490005](https://local.express.com:8080/mens-clothing/sweaters/cat1490005))
+
+---
+
+## 🎯 Executive Summary
+
+**3 critical issues detected** requiring immediate attention
+
+- **Total Memory Impact:** 380.5KB
+- **Leak Patterns:** 10 identified
+- **Memory Objects:** 10 large consumers
+- **Analysis Type:** 🌐 Website
+
+### Severity Breakdown
+
+- 🔴 **CRITICAL:** 1 issues
+- 🟠 **HIGH:** 2 issues
+- 🟡 **MEDIUM:** 7 issues
+
+---
+
+## 📊 Top Memory Consumers
+
+### 1. Object { ./app/containers/LoginContainer/components/index.js, ./app/pages/ProductV2/subcontainers/ProductImagesV2/subcomponents/ExpandableNav/ExpandableNav.jsx, ./app/utils/getSourceAndDeviceType/getSourceAndDeviceType.js, ./node_modules/@apollo/client/core/ApolloClient.js, ./node_modules/jsbarcode/bin/help/getRenderProperties.js, ... } (@457647) ✅ INVESTIGATED
+
+- **Size:** 2.2MB (2,306,867 bytes)
+- **Category:** Data
+- **Complexity:** 1,844 edges
+- **References:** c, **webpack_module_cache**, installedModules
+
+#### Object Details
+
+- **Self Size:** 12 bytes
+- **Retained Size:** 2,253,276 bytes
+- **Top References:** 10 edges (first 10 indices: @875149, @349141, @1056893, @1056895, @1056897, @901071, @896471, @1056899, @1056901, @1056903)
+- **Held By:** `9` (from @3490527), `2` (from @3458063), `c` (from @686121), `1` (from @457643), `__webpack_module_cache__` (from @299997), `installedModules` (from @297633)
+
+#### Root Cause
+
+- **Leak Source Variable:** `__webpack_module_cache__`
+- **Reference Type:** variable
+- **From Node:** @457647
+
+#### Critical Retention Points
+
+- Step 2: Event handler closure (@2189081)
+- Step 3: Function scope capturing variables (@1059517, 352 bytes)
+- Step 4: Function scope capturing variables (@299997, 88 bytes)
+
+#### Full Retention Path (5 steps)
+
+```
+   1. Window / https://local.express.com:8080 (@6409) (shortcut) - 1.1MB
+   2. <closure> (@2189081) (property) - 76 bytes
+   3. <function scope> (@1059517) (internal) - 352 bytes
+   4. <function scope> (@299997) (internal) - 88 bytes
+   5. Object (@457647) (variable) - 2.2MB
+```
+
+- **Investigated At:** 12/2/2025, 1:34:47 PM
+
+### 2. e (@3445991) ✅ INVESTIGATED
+
+- **Size:** 1.1MB (1,153,434 bytes)
+- **Category:** Unknown
+- **Complexity:** 15 edges
+- **References:** events
+
+#### Object Details
+
+- **Self Size:** 20 bytes
+- **Retained Size:** 1,146,616 bytes
+- **Top References:** 10 edges (first 10 indices: @2487659, @2053383, @1370309, @934961, @3206479, @2613019, @2653341, @2562357, @3252557, @3445993)
+- **Held By:** `events` (from @3445989)
+
+#### Root Cause
+
+- **Leak Source Variable:** `events`
+- **Reference Type:** property
+- **From Node:** @3445991
+
+#### Critical Retention Points
+
+- Step 3: Function scope capturing variables (@1047091, 484.4KB)
+- Step 6: Function scope capturing variables (@3374931, 168 bytes)
+
+#### Full Retention Path (9 steps)
+
+```
+   1. Window / https://local.express.com:8080 (@6409) (shortcut) - 1.1MB
+   2. El (@2048125) (property) - 76 bytes
+   3. <function scope> (@1047091) (internal) - 484.4KB
+   4. Object (@1971689) (variable) - 384 bytes
+   5. subscribe (@1050739) (property) - 76 bytes
+   6. <function scope> (@3374931) (internal) - 168 bytes
+   7. Object (@1050751) (variable) - 1.1MB
+   8. Object (@3445989) (property) - 1.1MB
+   9. e (@3445991) (property) - 1.1MB
+```
+
+- **Investigated At:** 12/2/2025, 1:36:48 PM
+
+### 3. system / Context (@268707)
+
+- **Size:** 689KB (705,536 bytes)
+- **Category:** Javascript
+- **Complexity:** 349 edges
+- **References:** constructor, lo, mo, Q, Z, j, tn, jn, F, X
+- **Status:** Not yet investigated
+- **Command:** `npx heap-analyzer investigate snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot --object-id @268707`
+
+### 4. InMemoryCache (@231793)
+
+- **Size:** 610.9KB (625,562 bytes)
+- **Category:** Unknown
+- **Complexity:** 20 edges
+- **References:** _this, cache
+- **Status:** Not yet investigated
+- **Command:** `npx heap-analyzer investigate snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot --object-id @231793`
+
+### 5. Object { 34327, 78644, 84626, 88910, 98370, ... } (@1339899)
+
+- **Size:** 577.1KB (590,950 bytes)
+- **Category:** Data
+- **Complexity:** 576 edges
+- **References:** a
+- **Status:** Not yet investigated
+- **Command:** `npx heap-analyzer investigate snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot --object-id @1339899`
+
+### 6. Map (@496019)
+
+- **Size:** 487.1KB (498,790 bytes)
+- **Category:** Data
+- **Complexity:** 1,727 edges
+- **References:** A
+- **Status:** Not yet investigated
+- **Command:** `npx heap-analyzer investigate snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot --object-id @496019`
+
+### 7. system / Context (@1047091)
+
+- **Size:** 484.4KB (496,026 bytes)
+- **Category:** Javascript
+- **Complexity:** 472 edges
+- **References:** getDerivedStateFromError, isFullHeight, isFullWidth, bottomEdge, rightEdge, x, e, getChannelState, updateChannelState, subscribe
+- **Status:** Not yet investigated
+- **Command:** `npx heap-analyzer investigate snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot --object-id @1047091`
+
+### 8. Array (@1817525) ✅ INVESTIGATED
+
+- **Size:** 480.7KB (492,237 bytes)
+- **Category:** Data
+- **Complexity:** 63 edges
+- **References:** C
+
+#### Object Details
+
+- **Self Size:** 16 bytes
+- **Retained Size:** 480,760 bytes
+- **Top References:** 10 edges (first 10 indices: @1817537, @1817539, @1817541, @1817543, @1817545, @1748657, @1743549, @1745007, @1745567, @1817547)
+- **Held By:** `C` (from @1250459)
+
+#### Root Cause
+
+- **Leak Source Variable:** `C`
+- **Reference Type:** property
+- **From Node:** @1817525
+
+#### Full Retention Path (4 steps)
+
+```
+   1. Window / https://local.express.com:8080 (@6409) (shortcut) - 1.1MB
+   2. Object (@1250451) (property) - 511.7KB
+   3. Jl (@1250459) (property) - 482KB
+   4. Array (@1817525) (property) - 480.7KB
+```
+
+- **Investigated At:** 12/2/2025, 1:40:08 PM
+
+### 9. system / Context (@1695751)
+
+- **Size:** 433.9KB (444,314 bytes)
+- **Category:** Javascript
+- **Complexity:** 328 edges
+- **References:** _result, delimitedMany, any, unexpected, expectOptionalKeyword, expectKeyword, parseDirectiveLocation, parseDirectiveLocations, parseDirectiveDefinition, parseInputObjectTypeExtension
+- **Status:** Not yet investigated
+- **Command:** `npx heap-analyzer investigate snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot --object-id @1695751`
+
+### 10. system / Context (@244195)
+
+- **Size:** 400.4KB (410,010 bytes)
+- **Category:** Javascript
+- **Complexity:** 1,685 edges
+- **References:** Aj, Ss, wn, H, Vl, Cn, pq, Iz, Uu, wl
+- **Status:** Not yet investigated
+- **Command:** `npx heap-analyzer investigate snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot --object-id @244195`
+
+---
+
+## 🌐 Global Variables
+
+### 1. google_tag_data (@1250451)
+
+- **Type:** Object { ics, tidr, uach, uach_promise, xcd, ... }
+- **Size:** 511.7KB (523,981 bytes)
+- **Complexity:** 9 edges
+- **References:** value, google_tag_data
+
+### 2. Granify (@1041477)
+
+- **Type:** closure
+- **Size:** 158.2KB (161,997 bytes)
+- **Complexity:** 396 edges
+- **References:** t, i, value, bound_this, Granify
+
+### 3. GLOBAL (@222197)
+
+- **Type:** native Window
+- **Size:** 135.6KB (138,854 bytes)
+- **Complexity:** 38 edges
+- **References:** bound_this, a, g, f, h
+
+### 4. 
+
+- **Type:** native Window
+- **Size:** 135.6KB (138,854 bytes)
+- **Complexity:** 38 edges
+- **References:** bound_this, a, g, f, h
+
+### 5. global_proxy (@222197)
+
+- **Type:** native Window
+- **Size:** 135.6KB (138,854 bytes)
+- **Complexity:** 38 edges
+- **References:** bound_this, a, g, f, h
+
+### 6. <symbol Window#DocumentCachedAccessor> (@222195)
+
+- **Type:** native HTMLDocument
+- **Size:** 92.5KB (94,720 bytes)
+- **Complexity:** 78 edges
+- **References:** r, b, h, n, k
+
+### 7. jQuery (@245035)
+
+- **Type:** closure n
+- **Size:** 83.7KB (85,709 bytes)
+- **Complexity:** 99 edges
+- **References:** value, constructor, n, jQuery, $
+
+### 8. crl8 (@1956693)
+
+- **Type:** Object { EventBus, createExperience, debug, pixel, ready, ... }
+- **Size:** 82.2KB (84,173 bytes)
+- **Complexity:** 19 edges
+- **References:** value, crl8
+
+### 9. 
+
+- **Type:** native Detached Window
+- **Size:** 80.1KB (82,022 bytes)
+- **Complexity:** 24 edges
+- **References:** r, p, o, s, e
+
+### 10. global_proxy (@203109)
+
+- **Type:** native Detached Window
+- **Size:** 80.1KB (82,022 bytes)
+- **Complexity:** 24 edges
+- **References:** r, p, o, s, e
+
+---
+
+## 🏗️ Detached DOM Elements
+
+_No detached DOM elements detected_
+
+---
+
+## 📈 Unbound Collections
+
+_No unbound collections detected_
+
+---
+
+## 🚨 Memory Leak Analysis
+
+### 1. 1178 similar objects retained
+
+- **Impact:** 182.7KB (1,178 instances)
+- **Priority:** 🔴 CRITICAL
+- **Category:** data-structures
+- **Confidence:** 50%
+
+### 2. 884 similar objects retained
+
+- **Impact:** 136.1KB (884 instances)
+- **Priority:** 🟠 HIGH
+- **Category:** data-structures
+- **Confidence:** 50%
+
+### 3. 245 similar objects retained
+
+- **Impact:** 27KB (245 instances)
+- **Priority:** 🟠 HIGH
+- **Category:** data-structures
+- **Confidence:** 50%
+
+### 4. 78 similar objects retained
+
+- **Impact:** 3.1KB (78 instances)
+- **Priority:** 🟡 MEDIUM
+- **Category:** data-structures
+- **Confidence:** 50%
+
+### 5. 77 similar objects retained
+
+- **Impact:** 5.4KB (77 instances)
+- **Priority:** 🟡 MEDIUM
+- **Category:** data-structures
+- **Confidence:** 50%
+
+### 6. 62 similar objects retained
+
+- **Impact:** 2.5KB (62 instances)
+- **Priority:** 🟡 MEDIUM
+- **Category:** data-structures
+- **Confidence:** 50%
+
+### 7. 46 similar objects retained
+
+- **Impact:** 4.3KB (46 instances)
+- **Priority:** 🟡 MEDIUM
+- **Category:** data-structures
+- **Confidence:** 50%
+
+### 8. 34 similar objects retained
+
+- **Impact:** 8.1KB (34 instances)
+- **Priority:** 🟡 MEDIUM
+- **Category:** data-structures
+- **Confidence:** 50%
+
+### 9. 23 similar objects retained
+
+- **Impact:** 10.1KB (23 instances)
+- **Priority:** 🟡 MEDIUM
+- **Category:** data-structures
+- **Confidence:** 50%
+
+### 10. 22 similar objects retained
+
+- **Impact:** 1.2KB (22 instances)
+- **Priority:** 🟡 MEDIUM
+- **Category:** data-structures
+- **Confidence:** 50%
+
+---
+
+## 🛠️ Recommended Actions
+
+### Immediate Actions
+
+1. Investigate 1178 similar objects retained (182.7KB impact)
+2. Investigate 884 similar objects retained (136.1KB impact)
+3. Investigate 245 similar objects retained (27KB impact)
+
+### Investigation Commands
+
+```bash
+npx heap-analyzer investigate "snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot" --object-id @457647
+npx heap-analyzer investigate "snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot" --object-id @3445991
+npx heap-analyzer investigate "snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot" --object-id @268707
+```
+
+### Next Steps
+
+1. npx heap-analyzer investigate "snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot" --object-id @457647
+2. npx heap-analyzer investigate "snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot" --object-id @3445991
+3. npx heap-analyzer investigate "snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot" --object-id @268707
+
+---
+
+## 📈 Additional Analysis
+
+### Alternative Commands
+
+```bash
+# Run comparative analysis
+npx heap-analyzer compare snapshots/browser-snapshots-1764700311474-local.express.com/ui-before-1764700321716.heapsnapshot snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot
+
+# Export raw data for custom analysis
+npx heap-analyzer export snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot --format json
+
+# Generate timeline analysis
+npx heap-analyzer timeline --snapshot-dir "snapshots/browser-snapshots-1764700311474-local.express.com"
+```
+
+---
+
+**Analysis Performance:** 4ms  
+**Generated by:** Heap Analyzer v6.369.0  
+**Schema Version:** 1.4.0
+
+
+
+
+
+
+
+{
+
+"schema": {
+
+"version": "1.4.0",
+
+"generatedAt": "2025-12-02T18:33:57.703Z"
+
+},
+
+"metadata": {
+
+"timestamp": "2025-12-02T18-32-55-510Z",
+
+"sessionId": "2025-12-02T18-32-55-510Z",
+
+"analysisType": "website",
+
+"target": {
+
+"name": "Sweaters",
+
+"url": "https://local.express.com:8080/mens-clothing/sweaters/cat1490005",
+
+"title": "Sweaters",
+
+"domain": "local.express.com"
+
+},
+
+"snapshots": {
+
+"baseline": "snapshots/browser-snapshots-1764700311474-local.express.com/ui-before-1764700321716.heapsnapshot",
+
+"target": "snapshots/browser-snapshots-1764700311474-local.express.com/ui-after-1764700338789.heapsnapshot",
+
+"final": "snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot",
+
+"totalSize": 584318590,
+
+"count": 3
+
+},
+
+"performance": {
+
+"toolVersion": "6.369.0",
+
+"analysisDuration": 4
+
+}
+
+},
+
+"summary": {
+
+"totalLeaks": 10,
+
+"totalRetainedSize": "380.5KB",
+
+"totalRetainedSizeBytes": 389631,
+
+"criticalIssues": 3,
+
+"severityBreakdown": {
+
+"critical": 1,
+
+"high": 2,
+
+"medium": 7,
+
+"low": 0
+
+},
+
+"topCategories": [
+
+"data-structures"
+
+]
+
+},
+
+"memoryObjects": [
+
+{
+
+"id": "457647",
+
+"type": "Object { ./app/containers/LoginContainer/components/index.js, ./app/pages/ProductV2/subcontainers/ProductImagesV2/subcomponents/ExpandableNav/ExpandableNav.jsx, ./app/utils/getSourceAndDeviceType/getSourceAndDeviceType.js, ./node_modules/@apollo/client/core/ApolloClient.js, ./node_modules/jsbarcode/bin/help/getRenderProperties.js, ... }",
+
+"size": "2.2MB",
+
+"sizeBytes": 2306867,
+
+"edges": 1844,
+
+"refs": [
+
+"c",
+
+"__webpack_module_cache__",
+
+"installedModules"
+
+],
+
+"category": "data",
+
+"investigated": true
+
+},
+
+{
+
+"id": "3445991",
+
+"type": "e",
+
+"size": "1.1MB",
+
+"sizeBytes": 1153434,
+
+"edges": 15,
+
+"refs": [
+
+"events"
+
+],
+
+"category": "unknown",
+
+"investigated": true
+
+},
+
+{
+
+"id": "268707",
+
+"type": "system / Context",
+
+"size": "689KB",
+
+"sizeBytes": 705536,
+
+"edges": 349,
+
+"refs": [
+
+"constructor",
+
+"lo",
+
+"mo",
+
+"Q",
+
+"Z",
+
+"j",
+
+"tn",
+
+"jn",
+
+"F",
+
+"X"
+
+],
+
+"category": "javascript"
+
+},
+
+{
+
+"id": "231793",
+
+"type": "InMemoryCache",
+
+"size": "610.9KB",
+
+"sizeBytes": 625562,
+
+"edges": 20,
+
+"refs": [
+
+"_this",
+
+"cache"
+
+],
+
+"category": "unknown"
+
+},
+
+{
+
+"id": "1339899",
+
+"type": "Object { 34327, 78644, 84626, 88910, 98370, ... }",
+
+"size": "577.1KB",
+
+"sizeBytes": 590950,
+
+"edges": 576,
+
+"refs": [
+
+"a"
+
+],
+
+"category": "data"
+
+},
+
+{
+
+"id": "496019",
+
+"type": "Map",
+
+"size": "487.1KB",
+
+"sizeBytes": 498790,
+
+"edges": 1727,
+
+"refs": [
+
+"A"
+
+],
+
+"category": "data"
+
+},
+
+{
+
+"id": "1047091",
+
+"type": "system / Context",
+
+"size": "484.4KB",
+
+"sizeBytes": 496026,
+
+"edges": 472,
+
+"refs": [
+
+"getDerivedStateFromError",
+
+"isFullHeight",
+
+"isFullWidth",
+
+"bottomEdge",
+
+"rightEdge",
+
+"x",
+
+"e",
+
+"getChannelState",
+
+"updateChannelState",
+
+"subscribe"
+
+],
+
+"category": "javascript"
+
+},
+
+{
+
+"id": "1817525",
+
+"type": "Array",
+
+"size": "480.7KB",
+
+"sizeBytes": 492237,
+
+"edges": 63,
+
+"refs": [
+
+"C"
+
+],
+
+"category": "data",
+
+"investigated": true
+
+},
+
+{
+
+"id": "1695751",
+
+"type": "system / Context",
+
+"size": "433.9KB",
+
+"sizeBytes": 444314,
+
+"edges": 328,
+
+"refs": [
+
+"_result",
+
+"delimitedMany",
+
+"any",
+
+"unexpected",
+
+"expectOptionalKeyword",
+
+"expectKeyword",
+
+"parseDirectiveLocation",
+
+"parseDirectiveLocations",
+
+"parseDirectiveDefinition",
+
+"parseInputObjectTypeExtension"
+
+],
+
+"category": "javascript"
+
+},
+
+{
+
+"id": "244195",
+
+"type": "system / Context",
+
+"size": "400.4KB",
+
+"sizeBytes": 410010,
+
+"edges": 1685,
+
+"refs": [
+
+"Aj",
+
+"Ss",
+
+"wn",
+
+"H",
+
+"Vl",
+
+"Cn",
+
+"pq",
+
+"Iz",
+
+"Uu",
+
+"wl"
+
+],
+
+"category": "javascript"
+
+}
+
+],
+
+"leakPatterns": [
+
+{
+
+"id": "leak-1",
+
+"count": 1178,
+
+"retainedSize": "182.7KB",
+
+"retainedSizeBytes": 187085,
+
+"description": "1178 similar objects retained",
+
+"category": "data-structures",
+
+"priority": "critical",
+
+"confidence": 0.5
+
+},
+
+{
+
+"id": "leak-2",
+
+"count": 884,
+
+"retainedSize": "136.1KB",
+
+"retainedSizeBytes": 139366,
+
+"description": "884 similar objects retained",
+
+"category": "data-structures",
+
+"priority": "high",
+
+"confidence": 0.5
+
+},
+
+{
+
+"id": "leak-3",
+
+"count": 245,
+
+"retainedSize": "27KB",
+
+"retainedSizeBytes": 27648,
+
+"description": "245 similar objects retained",
+
+"category": "data-structures",
+
+"priority": "high",
+
+"confidence": 0.5
+
+},
+
+{
+
+"id": "leak-4",
+
+"count": 78,
+
+"retainedSize": "3.1KB",
+
+"retainedSizeBytes": 3174,
+
+"description": "78 similar objects retained",
+
+"category": "data-structures",
+
+"priority": "medium",
+
+"confidence": 0.5
+
+},
+
+{
+
+"id": "leak-5",
+
+"count": 77,
+
+"retainedSize": "5.4KB",
+
+"retainedSizeBytes": 5530,
+
+"description": "77 similar objects retained",
+
+"category": "data-structures",
+
+"priority": "medium",
+
+"confidence": 0.5
+
+},
+
+{
+
+"id": "leak-6",
+
+"count": 62,
+
+"retainedSize": "2.5KB",
+
+"retainedSizeBytes": 2560,
+
+"description": "62 similar objects retained",
+
+"category": "data-structures",
+
+"priority": "medium",
+
+"confidence": 0.5
+
+},
+
+{
+
+"id": "leak-7",
+
+"count": 46,
+
+"retainedSize": "4.3KB",
+
+"retainedSizeBytes": 4403,
+
+"description": "46 similar objects retained",
+
+"category": "data-structures",
+
+"priority": "medium",
+
+"confidence": 0.5
+
+},
+
+{
+
+"id": "leak-8",
+
+"count": 34,
+
+"retainedSize": "8.1KB",
+
+"retainedSizeBytes": 8294,
+
+"description": "34 similar objects retained",
+
+"category": "data-structures",
+
+"priority": "medium",
+
+"confidence": 0.5
+
+},
+
+{
+
+"id": "leak-9",
+
+"count": 23,
+
+"retainedSize": "10.1KB",
+
+"retainedSizeBytes": 10342,
+
+"description": "23 similar objects retained",
+
+"category": "data-structures",
+
+"priority": "medium",
+
+"confidence": 0.5
+
+},
+
+{
+
+"id": "leak-10",
+
+"count": 22,
+
+"retainedSize": "1.2KB",
+
+"retainedSizeBytes": 1229,
+
+"description": "22 similar objects retained",
+
+"category": "data-structures",
+
+"priority": "medium",
+
+"confidence": 0.5
+
+}
+
+],
+
+"globalVariables": [
+
+{
+
+"name": "google_tag_data",
+
+"id": "1250451",
+
+"type": "Object { ics, tidr, uach, uach_promise, xcd, ... }",
+
+"size": "511.7KB",
+
+"sizeBytes": 523981,
+
+"edges": 9,
+
+"refs": [
+
+"value",
+
+"google_tag_data"
+
+]
+
+},
+
+{
+
+"name": "Granify",
+
+"id": "1041477",
+
+"type": "closure",
+
+"size": "158.2KB",
+
+"sizeBytes": 161997,
+
+"edges": 396,
+
+"refs": [
+
+"t",
+
+"i",
+
+"value",
+
+"bound_this",
+
+"Granify"
+
+]
+
+},
+
+{
+
+"name": "GLOBAL",
+
+"id": "222197",
+
+"type": "native Window",
+
+"size": "135.6KB",
+
+"sizeBytes": 138854,
+
+"edges": 38,
+
+"refs": [
+
+"bound_this",
+
+"a",
+
+"g",
+
+"f",
+
+"h",
+
+"scope",
+
+"e",
+
+"this",
+
+"r",
+
+"n"
+
+]
+
+},
+
+{
+
+"name": "<symbol V8PrivateProperty::CachedAccessor::kWindowProxy>",
+
+"id": "222197",
+
+"type": "native Window",
+
+"size": "135.6KB",
+
+"sizeBytes": 138854,
+
+"edges": 38,
+
+"refs": [
+
+"bound_this",
+
+"a",
+
+"g",
+
+"f",
+
+"h",
+
+"scope",
+
+"e",
+
+"this",
+
+"r",
+
+"n"
+
+]
+
+},
+
+{
+
+"name": "global_proxy",
+
+"id": "222197",
+
+"type": "native Window",
+
+"size": "135.6KB",
+
+"sizeBytes": 138854,
+
+"edges": 38,
+
+"refs": [
+
+"bound_this",
+
+"a",
+
+"g",
+
+"f",
+
+"h",
+
+"scope",
+
+"e",
+
+"this",
+
+"r",
+
+"n"
+
+]
+
+},
+
+{
+
+"name": "<symbol Window#DocumentCachedAccessor>",
+
+"id": "222195",
+
+"type": "native HTMLDocument",
+
+"size": "92.5KB",
+
+"sizeBytes": 94720,
+
+"edges": 78,
+
+"refs": [
+
+"r",
+
+"b",
+
+"h",
+
+"n",
+
+"k",
+
+"i",
+
+"bound_argument_2",
+
+"bound_this",
+
+"instance",
+
+"document"
+
+]
+
+},
+
+{
+
+"name": "jQuery",
+
+"id": "245035",
+
+"type": "closure n",
+
+"size": "83.7KB",
+
+"sizeBytes": 85709,
+
+"edges": 99,
+
+"refs": [
+
+"value",
+
+"constructor",
+
+"n",
+
+"jQuery",
+
+"$"
+
+]
+
+},
+
+{
+
+"name": "crl8",
+
+"id": "1956693",
+
+"type": "Object { EventBus, createExperience, debug, pixel, ready, ... }",
+
+"size": "82.2KB",
+
+"sizeBytes": 84173,
+
+"edges": 19,
+
+"refs": [
+
+"value",
+
+"crl8"
+
+]
+
+},
+
+{
+
+"name": "<symbol V8PrivateProperty::CachedAccessor::kWindowProxy>",
+
+"id": "203109",
+
+"type": "native Detached Window",
+
+"size": "80.1KB",
+
+"sizeBytes": 82022,
+
+"edges": 24,
+
+"refs": [
+
+"r",
+
+"p",
+
+"o",
+
+"s",
+
+"e",
+
+"value",
+
+"this",
+
+"global_proxy",
+
+"<symbol V8PrivateProperty::CachedAccessor::kWindowProxy>",
+
+"globalThis"
+
+]
+
+},
+
+{
+
+"name": "global_proxy",
+
+"id": "203109",
+
+"type": "native Detached Window",
+
+"size": "80.1KB",
+
+"sizeBytes": 82022,
+
+"edges": 24,
+
+"refs": [
+
+"r",
+
+"p",
+
+"o",
+
+"s",
+
+"e",
+
+"value",
+
+"this",
+
+"global_proxy",
+
+"<symbol V8PrivateProperty::CachedAccessor::kWindowProxy>",
+
+"globalThis"
+
+]
+
+},
+
+{
+
+"name": "<symbol V8PrivateProperty::CachedAccessor::kWindowProxy>",
+
+"id": "203093",
+
+"type": "Window",
+
+"size": "71.3KB",
+
+"sizeBytes": 73011,
+
+"edges": 1,
+
+"refs": [
+
+"this",
+
+"value",
+
+"part of key -> value pair in ephemeron table",
+
+"global_proxy",
+
+"<symbol V8PrivateProperty::CachedAccessor::kWindowProxy>",
+
+"globalThis",
+
+"global_proxy_object"
+
+]
+
+},
+
+{
+
+"name": "global_proxy",
+
+"id": "203093",
+
+"type": "Window",
+
+"size": "71.3KB",
+
+"sizeBytes": 73011,
+
+"edges": 1,
+
+"refs": [
+
+"this",
+
+"value",
+
+"part of key -> value pair in ephemeron table",
+
+"global_proxy",
+
+"<symbol V8PrivateProperty::CachedAccessor::kWindowProxy>",
+
+"globalThis",
+
+"global_proxy_object"
+
+]
+
+},
+
+{
+
+"name": "webpackChunkexpress_com",
+
+"id": "1059563",
+
+"type": "Array",
+
+"size": "69.2KB",
+
+"sizeBytes": 70861,
+
+"edges": 28,
+
+"refs": [
+
+"value",
+
+"bound_this",
+
+"webpackChunkexpress_com"
+
+]
+
+},
+
+{
+
+"name": "google_tag_manager",
+
+"id": "762221",
+
+"type": "Object { DC-15772160, DC-DC-15772160, autoEventsSettings, dedupe_gclid, tcf, ... }",
+
+"size": "63.4KB",
+
+"sizeBytes": 64922,
+
+"edges": 21,
+
+"refs": [
+
+"value",
+
+"$n",
+
+"google_tag_manager"
+
+]
+
+},
+
+{
+
+"name": "_fbq",
+
+"id": "246865",
+
+"type": "closure",
+
+"size": "36.2KB",
+
+"sizeBytes": 37069,
+
+"edges": 32,
+
+"refs": [
+
+"a",
+
+"f",
+
+"value",
+
+"fbq",
+
+"push",
+
+"_fbq"
+
+]
+
+},
+
+{
+
+"name": "fbq",
+
+"id": "246865",
+
+"type": "closure",
+
+"size": "36.2KB",
+
+"sizeBytes": 37069,
+
+"edges": 32,
+
+"refs": [
+
+"a",
+
+"f",
+
+"value",
+
+"fbq",
+
+"push",
+
+"_fbq"
+
+]
+
+},
+
+{
+
+"name": "ire",
+
+"id": "256463",
+
+"type": "closure",
+
+"size": "30.6KB",
+
+"sizeBytes": 31334,
+
+"edges": 6,
+
+"refs": [
+
+"value",
+
+"a",
+
+"ire"
+
+]
+
+},
+
+{
+
+"name": "triggermail",
+
+"id": "2188795",
+
+"type": "Object { add_to_cart, logging, merge, session, subscribe, ... }",
+
+"size": "27.6KB",
+
+"sizeBytes": 28262,
+
+"edges": 70,
+
+"refs": [
+
+"value",
+
+"l",
+
+"triggermail"
+
+]
+
+},
+
+{
+
+"name": "webpackChunkraven_header",
+
+"id": "2061281",
+
+"type": "Array",
+
+"size": "23.9KB",
+
+"sizeBytes": 24474,
+
+"edges": 16,
+
+"refs": [
+
+"value",
+
+"bound_this",
+
+"webpackChunkraven_header"
+
+]
+
+},
+
+{
+
+"name": "dataLayer",
+
+"id": "455553",
+
+"type": "Array",
+
+"size": "16.1KB",
+
+"sizeBytes": 16486,
+
+"edges": 43,
+
+"refs": [
+
+"b",
+
+"a",
+
+"H",
+
+"value",
+
+"dataLayer"
+
+]
+
+}
+
+],
+
+"detachedDOM": [],
+
+"unboundCollections": [],
+
+"recommendations": {
+
+"immediate": [
+
+"Investigate 1178 similar objects retained (182.7KB impact)",
+
+"Investigate 884 similar objects retained (136.1KB impact)",
+
+"Investigate 245 similar objects retained (27KB impact)"
+
+],
+
+"commands": [
+
+"npx heap-analyzer investigate \"snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot\" --object-id @457647",
+
+"npx heap-analyzer investigate \"snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot\" --object-id @3445991",
+
+"npx heap-analyzer investigate \"snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot\" --object-id @268707"
+
+],
+
+"nextSteps": [
+
+"npx heap-analyzer investigate \"snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot\" --object-id @457647",
+
+"npx heap-analyzer investigate \"snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot\" --object-id @3445991",
+
+"npx heap-analyzer investigate \"snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot\" --object-id @268707"
+
+]
+
+},
+
+"investigations": [
+
+{
+
+"objectId": "@457647",
+
+"snapshot": "snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot",
+
+"investigatedAt": "2025-12-02T18:34:47.709Z",
+
+"objectDetails": {
+
+"id": 457647,
+
+"name": "Object",
+
+"type": "object",
+
+"selfSizeBytes": 12,
+
+"retainedSizeBytes": 2253276,
+
+"topReferences": [
+
+{
+
+"name": "./app/pages/ProductV2/subcontainers/ProductImagesV2/subcomponents/ExpandableNav/ExpandableNav.jsx",
+
+"toNode": 875149
+
+},
+
+{
+
+"name": "./app/utils/getSourceAndDeviceType/getSourceAndDeviceType.js",
+
+"toNode": 349141
+
+},
+
+{
+
+"name": "./node_modules/jsbarcode/bin/help/getRenderProperties.js",
+
+"toNode": 1056893
+
+},
+
+{
+
+"name": "./app/containers/LoginContainer/components/index.js",
+
+"toNode": 1056895
+
+},
+
+{
+
+"name": "./node_modules/@apollo/client/core/ApolloClient.js",
+
+"toNode": 1056897
+
+},
+
+{
+
+"name": "./node_modules/@express-labs/raven-ui/dist/es/DeprecatedColorSwatch.js",
+
+"toNode": 901071
+
+},
+
+{
+
+"name": "./node_modules/@express-labs/raven-ui/dist/es/FloatingPhoneInput.js",
+
+"toNode": 896471
+
+},
+
+{
+
+"name": "./app/staticLinks/index.js",
+
+"toNode": 1056899
+
+},
+
+{
+
+"name": "./app/hocs/errorBoundary/errorBoundary.jsx",
+
+"toNode": 1056901
+
+},
+
+{
+
+"name": "./app/pages/ProductV2/subcomponents/AddToBagFlyout/subcomponents/AddToBagFlyoutMarketingContent/index.js",
+
+"toNode": 1056903
+
+}
+
+],
+
+"topReferrers": [
+
+{
+
+"name": "9",
+
+"fromNode": 3490527
+
+},
+
+{
+
+"name": "2",
+
+"fromNode": 3458063
+
+},
+
+{
+
+"name": "c",
+
+"fromNode": 686121
+
+},
+
+{
+
+"name": "1",
+
+"fromNode": 457643
+
+},
+
+{
+
+"name": "__webpack_module_cache__",
+
+"fromNode": 299997
+
+},
+
+{
+
+"name": "installedModules",
+
+"fromNode": 297633
+
+}
+
+]
+
+},
+
+"retentionPath": [
+
+{
+
+"edge": "2",
+
+"edgeType": "shortcut",
+
+"object": "Window / https://local.express.com:8080",
+
+"type": "object",
+
+"nodeId": "6409",
+
+"size": "1.1MB"
+
+},
+
+{
+
+"edge": "webpackHotUpdateexpress_com",
+
+"edgeType": "property",
+
+"object": "<closure>",
+
+"type": "closure",
+
+"nodeId": "2189081",
+
+"size": "76 bytes"
+
+},
+
+{
+
+"edge": "context",
+
+"edgeType": "internal",
+
+"object": "<function scope>",
+
+"type": "object",
+
+"nodeId": "1059517",
+
+"size": "352 bytes"
+
+},
+
+{
+
+"edge": "previous",
+
+"edgeType": "internal",
+
+"object": "<function scope>",
+
+"type": "object",
+
+"nodeId": "299997",
+
+"size": "88 bytes"
+
+},
+
+{
+
+"edge": "__webpack_module_cache__",
+
+"edgeType": "variable",
+
+"object": "Object",
+
+"type": "object",
+
+"nodeId": "457647",
+
+"size": "2.2MB"
+
+}
+
+]
+
+},
+
+{
+
+"objectId": "@3445991",
+
+"snapshot": "snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot",
+
+"investigatedAt": "2025-12-02T18:36:48.688Z",
+
+"objectDetails": {
+
+"id": 3445991,
+
+"name": "e",
+
+"type": "object",
+
+"selfSizeBytes": 20,
+
+"retainedSizeBytes": 1146616,
+
+"topReferences": [
+
+{
+
+"name": "0",
+
+"toNode": 2487659
+
+},
+
+{
+
+"name": "1",
+
+"toNode": 2053383
+
+},
+
+{
+
+"name": "2",
+
+"toNode": 1370309
+
+},
+
+{
+
+"name": "3",
+
+"toNode": 934961
+
+},
+
+{
+
+"name": "4",
+
+"toNode": 3206479
+
+},
+
+{
+
+"name": "5",
+
+"toNode": 2613019
+
+},
+
+{
+
+"name": "6",
+
+"toNode": 2653341
+
+},
+
+{
+
+"name": "7",
+
+"toNode": 2562357
+
+},
+
+{
+
+"name": "8",
+
+"toNode": 3252557
+
+},
+
+{
+
+"name": "9",
+
+"toNode": 3445993
+
+}
+
+],
+
+"topReferrers": [
+
+{
+
+"name": "events",
+
+"fromNode": 3445989
+
+}
+
+]
+
+},
+
+"retentionPath": [
+
+{
+
+"edge": "2",
+
+"edgeType": "shortcut",
+
+"object": "Window / https://local.express.com:8080",
+
+"type": "object",
+
+"nodeId": "6409",
+
+"size": "1.1MB"
+
+},
+
+{
+
+"edge": "reactScan",
+
+"edgeType": "property",
+
+"object": "El",
+
+"type": "closure",
+
+"nodeId": "2048125",
+
+"size": "76 bytes"
+
+},
+
+{
+
+"edge": "context",
+
+"edgeType": "internal",
+
+"object": "<function scope>",
+
+"type": "object",
+
+"nodeId": "1047091",
+
+"size": "484.4KB"
+
+},
+
+{
+
+"edge": "Ha",
+
+"edgeType": "variable",
+
+"object": "Object",
+
+"type": "object",
+
+"nodeId": "1971689",
+
+"size": "384 bytes"
+
+},
+
+{
+
+"edge": "subscribe",
+
+"edgeType": "property",
+
+"object": "subscribe",
+
+"type": "closure",
+
+"nodeId": "1050739",
+
+"size": "76 bytes"
+
+},
+
+{
+
+"edge": "context",
+
+"edgeType": "internal",
+
+"object": "<function scope>",
+
+"type": "object",
+
+"nodeId": "3374931",
+
+"size": "168 bytes"
+
+},
+
+{
+
+"edge": "t",
+
+"edgeType": "variable",
+
+"object": "Object",
+
+"type": "object",
+
+"nodeId": "1050751",
+
+"size": "1.1MB"
+
+},
+
+{
+
+"edge": "state",
+
+"edgeType": "property",
+
+"object": "Object",
+
+"type": "object",
+
+"nodeId": "3445989",
+
+"size": "1.1MB"
+
+},
+
+{
+
+"edge": "events",
+
+"edgeType": "property",
+
+"object": "e",
+
+"type": "object",
+
+"nodeId": "3445991",
+
+"size": "1.1MB"
+
+}
+
+]
+
+},
+
+{
+
+"objectId": "@181752",
+
+"snapshot": "snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot",
+
+"investigatedAt": "2025-12-02T18:38:58.276Z",
+
+"objectDetails": {
+
+"id": 181752,
+
+"name": "InternalNode",
+
+"type": "native",
+
+"selfSizeBytes": 0,
+
+"retainedSizeBytes": 612,
+
+"topReferences": [
+
+{
+
+"name": "1",
+
+"toNode": 251872
+
+},
+
+{
+
+"name": "2",
+
+"toNode": 251874
+
+},
+
+{
+
+"name": "3",
+
+"toNode": 251876
+
+}
+
+],
+
+"topReferrers": [
+
+{
+
+"name": "1",
+
+"fromNode": 130584
+
+}
+
+]
+
+},
+
+"retentionPath": [
+
+{
+
+"edge": "root",
+
+"edgeType": "root",
+
+"object": "Window",
+
+"type": "native",
+
+"nodeId": "222197",
+
+"size": "135.6KB"
+
+},
+
+{
+
+"edge": "3",
+
+"edgeType": "element",
+
+"object": "HTMLDocument",
+
+"type": "native",
+
+"nodeId": "222195",
+
+"size": "92.5KB"
+
+},
+
+{
+
+"edge": "G",
+
+"edgeType": "property",
+
+"object": "Ok",
+
+"type": "object",
+
+"nodeId": "268365",
+
+"size": "357.2KB"
+
+},
+
+{
+
+"edge": "Oc",
+
+"edgeType": "property",
+
+"object": "WeakMap",
+
+"type": "object",
+
+"nodeId": "501305",
+
+"size": "131.1KB"
+
+},
+
+{
+
+"edge": "table",
+
+"edgeType": "internal",
+
+"object": "<array>",
+
+"type": "array",
+
+"nodeId": "501307",
+
+"size": "131KB"
+
+},
+
+{
+
+"edge": "parent",
+
+"edgeType": "property",
+
+"object": "HTMLAnchorElement",
+
+"type": "native",
+
+"nodeId": "215769",
+
+"size": "1.6KB"
+
+},
+
+{
+
+"edge": "17",
+
+"edgeType": "element",
+
+"object": "InternalNode",
+
+"type": "native",
+
+"nodeId": "130582",
+
+"size": "612 bytes"
+
+},
+
+{
+
+"edge": "1",
+
+"edgeType": "element",
+
+"object": "InternalNode",
+
+"type": "native",
+
+"nodeId": "130584",
+
+"size": "612 bytes"
+
+},
+
+{
+
+"edge": "1",
+
+"edgeType": "element",
+
+"object": "InternalNode",
+
+"type": "native",
+
+"nodeId": "181752",
+
+"size": "612 bytes"
+
+},
+
+{
+
+"edge": "2",
+
+"edgeType": "shortcut",
+
+"object": "Window / https://local.express.com:8080",
+
+"type": "object",
+
+"nodeId": "6409",
+
+"size": "1.1MB"
+
+},
+
+{
+
+"edge": "rrweb",
+
+"edgeType": "property",
+
+"object": "Object",
+
+"type": "object",
+
+"nodeId": "2188837",
+
+"size": "20 bytes"
+
+},
+
+{
+
+"edge": "record",
+
+"edgeType": "property",
+
+"object": "tn",
+
+"type": "closure",
+
+"nodeId": "1610299",
+
+"size": "600 bytes"
+
+},
+
+{
+
+"edge": "mirror",
+
+"edgeType": "property",
+
+"object": "Ve",
+
+"type": "object",
+
+"nodeId": "251599",
+
+"size": "246.3KB"
+
+},
+
+{
+
+"edge": "idNodeMap",
+
+"edgeType": "property",
+
+"object": "Map",
+
+"type": "object",
+
+"nodeId": "1373111",
+
+"size": "114.7KB"
+
+},
+
+{
+
+"edge": "table",
+
+"edgeType": "internal",
+
+"object": "<array>",
+
+"type": "array",
+
+"nodeId": "3013595",
+
+"size": "114.7KB"
+
+},
+
+{
+
+"edge": "6881",
+
+"edgeType": "internal",
+
+"object": "Text",
+
+"type": "native",
+
+"nodeId": "200951",
+
+"size": "128 bytes"
+
+}
+
+]
+
+},
+
+{
+
+"objectId": "@1817525",
+
+"snapshot": "snapshots/browser-snapshots-1764700311474-local.express.com/ui-final-1764700346459.heapsnapshot",
+
+"investigatedAt": "2025-12-02T18:40:08.131Z",
+
+"objectDetails": {
+
+"id": 1817525,
+
+"name": "Array",
+
+"type": "object",
+
+"selfSizeBytes": 16,
+
+"retainedSizeBytes": 480760,
+
+"topReferences": [
+
+{
+
+"name": "0",
+
+"toNode": 1817537
+
+},
+
+{
+
+"name": "1",
+
+"toNode": 1817539
+
+},
+
+{
+
+"name": "2",
+
+"toNode": 1817541
+
+},
+
+{
+
+"name": "3",
+
+"toNode": 1817543
+
+},
+
+{
+
+"name": "4",
+
+"toNode": 1817545
+
+},
+
+{
+
+"name": "5",
+
+"toNode": 1748657
+
+},
+
+{
+
+"name": "6",
+
+"toNode": 1743549
+
+},
+
+{
+
+"name": "7",
+
+"toNode": 1745007
+
+},
+
+{
+
+"name": "8",
+
+"toNode": 1745567
+
+},
+
+{
+
+"name": "9",
+
+"toNode": 1817547
+
+}
+
+],
+
+"topReferrers": [
+
+{
+
+"name": "C",
+
+"fromNode": 1250459
+
+}
+
+]
+
+},
+
+"retentionPath": [
+
+{
+
+"edge": "2",
+
+"edgeType": "shortcut",
+
+"object": "Window / https://local.express.com:8080",
+
+"type": "object",
+
+"nodeId": "6409",
+
+"size": "1.1MB"
+
+},
+
+{
+
+"edge": "google_tag_data",
+
+"edgeType": "property",
+
+"object": "Object",
+
+"type": "object",
+
+"nodeId": "1250451",
+
+"size": "511.7KB"
+
+},
+
+{
+
+"edge": "ics",
+
+"edgeType": "property",
+
+"object": "Jl",
+
+"type": "object",
+
+"nodeId": "1250459",
+
+"size": "482KB"
+
+},
+
+{
+
+"edge": "C",
+
+"edgeType": "property",
+
+"object": "Array",
+
+"type": "object",
+
+"nodeId": "1817525",
+
+"size": "480.7KB"
+
+}
+
+]
+
+}
+
+]
+
+}
