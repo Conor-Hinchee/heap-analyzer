@@ -755,6 +755,12 @@ if (command === 'list') {
   
   const { generateMarkdownReport } = await import('./reportGenerator.js');
   await generateMarkdownReport(jsonPath);
+} else if (command === 'timeline') {
+  const directory = positionals[1] || values['snapshot-dir'] || '.';
+  const leakThreshold = values.threshold ? parseFloat(values.threshold) : 10;
+  
+  const { timelineCLI } = await import('./timelineAnalyzer.js');
+  await timelineCLI(directory, { leakThreshold });
 } else if (command === 'analyze' || file) {
   if (!file) {
     console.error('❌ Error: Please provide a heap snapshot file');
@@ -848,12 +854,6 @@ if (command === 'list') {
       traceAllObjects: true
     });
   }
-} else if (command === 'timeline') {
-  const directory = positionals[1] || values['snapshot-dir'] || '.';
-  const leakThreshold = values.threshold ? parseFloat(values.threshold) : 10;
-  
-  const { timelineCLI } = await import('./timelineAnalyzer.js');
-  await timelineCLI(directory, { leakThreshold });
 } else {
   console.log('\n💡 Use --help to see available commands');
   console.log('💡 Use "list" to see available snapshots');
