@@ -1,0 +1,2115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Heap Analyzer — Memory Analysis Dashboard</title>
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg2:       #161b22;
+      --bg3:       #21262d;
+      --border:    #30363d;
+      --border2:   #444c56;
+      --text:      #e6edf3;
+      --text2:     #8b949e;
+      --text3:     #6e7681;
+      --blue:      #388bfd;
+      --blue-dim:  #1f3a5f;
+      --green:     #3fb950;
+      --green-dim: #1a3a2a;
+      --yellow:    #d29922;
+      --yellow-dim:#3a2e10;
+      --red:       #f85149;
+      --red-dim:   #3d1a1a;
+      --purple:    #a371f7;
+      --purple-dim:#2e1f50;
+      --orange:    #e3b341;
+      --radius:    8px;
+      --shadow:    0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'SF Pro Text',
+                   Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Layout ────────────────────────────────────────────────────────── */
+    .app-shell {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      grid-template-rows: 56px 1fr;
+      grid-template-areas:
+        "sidebar header"
+        "sidebar main";
+      min-height: 100vh;
+    }
+
+    /* ── Header ────────────────────────────────────────────────────────── */
+    .header {
+      grid-area: header;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .header-title { font-size: 15px; font-weight: 600; color: var(--text); flex: 1; }
+    .header-badge {
+      background: var(--blue-dim);
+      color: var(--blue);
+      border: 1px solid var(--blue);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text2);
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--text3);
+      transition: background 0.3s;
+    }
+    .status-dot.ok    { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.warn  { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+    .status-dot.error { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+
+    /* ── Sidebar ───────────────────────────────────────────────────────── */
+    .sidebar {
+      grid-area: sidebar;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      padding: 16px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      overflow-y: auto;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+    .sidebar-section {
+      padding: 4px 16px 2px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text3);
+      margin-top: 12px;
+    }
+    .sidebar-section:first-child { margin-top: 0; }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 16px;
+      cursor: pointer;
+      border-radius: 0;
+      color: var(--text2);
+      font-size: 13px;
+      transition: background 0.15s, color 0.15s;
+      border-left: 3px solid transparent;
+      user-select: none;
+    }
+    .nav-item:hover { background: var(--bg3); color: var(--text); }
+    .nav-item.active {
+      background: rgba(56,139,253,0.1);
+      color: var(--blue);
+      border-left-color: var(--blue);
+      font-weight: 500;
+    }
+    .nav-icon { font-size: 15px; flex-shrink: 0; width: 18px; text-align: center; }
+    .nav-badge {
+      margin-left: auto;
+      background: var(--red-dim);
+      color: var(--red);
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .nav-badge.info {
+      background: var(--blue-dim);
+      color: var(--blue);
+    }
+
+    /* ── Main ──────────────────────────────────────────────────────────── */
+    main {
+      grid-area: main;
+      padding: 28px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* ── Panels / Views ────────────────────────────────────────────────── */
+    .view { display: none; flex-direction: column; gap: 24px; }
+    .view.active { display: flex; }
+
+    /* ── Page header ───────────────────────────────────────────────────── */
+    .page-header { display: flex; align-items: flex-start; gap: 12px; flex-direction: column; }
+    .page-header h1 { font-size: 22px; font-weight: 700; line-height: 1.2; }
+    .page-header p  { color: var(--text2); font-size: 13px; max-width: 600px; }
+
+    /* ── Cards ─────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card-title {
+      font-weight: 600;
+      font-size: 13px;
+      flex: 1;
+    }
+    .card-body { padding: 20px; }
+    .card-body.no-pad { padding: 0; }
+
+    /* ── Stat Grid ─────────────────────────────────────────────────────── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 12px;
+    }
+    .stat-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .stat-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+    .stat-value { font-size: 26px; font-weight: 700; line-height: 1; }
+    .stat-sub   { font-size: 11px; color: var(--text2); margin-top: 4px; }
+
+    .stat-card.blue   { border-color: var(--blue);   }
+    .stat-card.green  { border-color: var(--green);  }
+    .stat-card.yellow { border-color: var(--yellow); }
+    .stat-card.red    { border-color: var(--red);    }
+    .stat-card.purple { border-color: var(--purple); }
+
+    .text-blue   { color: var(--blue);   }
+    .text-green  { color: var(--green);  }
+    .text-yellow { color: var(--yellow); }
+    .text-red    { color: var(--red);    }
+    .text-purple { color: var(--purple); }
+    .text-orange { color: var(--orange); }
+    .text-dim    { color: var(--text2);  }
+
+    /* ── Tables ────────────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    th {
+      background: var(--bg3);
+      color: var(--text2);
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .mono { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 11.5px; }
+
+    /* ── Severity Pills ────────────────────────────────────────────────── */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .pill-info     { background: var(--blue-dim);   color: var(--blue);   border: 1px solid var(--blue); }
+    .pill-warning  { background: var(--yellow-dim); color: var(--yellow); border: 1px solid var(--yellow); }
+    .pill-critical { background: var(--red-dim);    color: var(--red);    border: 1px solid var(--red); }
+    .pill-ok       { background: var(--green-dim);  color: var(--green);  border: 1px solid var(--green); }
+    .pill-purple   { background: var(--purple-dim); color: var(--purple); border: 1px solid var(--purple); }
+
+    /* ── Progress / Memory Bar ─────────────────────────────────────────── */
+    .mem-bar-wrap { height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+    .mem-bar {
+      height: 100%;
+      border-radius: 4px;
+      background: linear-gradient(90deg, var(--green) 0%, var(--yellow) 65%, var(--red) 100%);
+      transition: width 0.4s ease;
+    }
+
+    /* ── Timeline Chart ────────────────────────────────────────────────── */
+    .timeline-chart-wrap {
+      position: relative;
+      height: 220px;
+      background: var(--bg3);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    #timeline-svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── Trend Badge ───────────────────────────────────────────────────── */
+    .trend-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    /* ── Workflow Steps ────────────────────────────────────────────────── */
+    .workflow-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .workflow-step {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      transition: border-color 0.2s;
+    }
+    .workflow-step.active  { border-color: var(--blue);  background: rgba(56,139,253,0.06); }
+    .workflow-step.done    { border-color: var(--green); background: rgba(63,185,80,0.05);  }
+    .workflow-step.pending { opacity: 0.5; }
+    .step-number {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .workflow-step.active  .step-number { background: var(--blue);  color: white; }
+    .workflow-step.done    .step-number { background: var(--green); color: white; }
+    .step-label  { font-weight: 600; font-size: 13px; }
+    .step-desc   { font-size: 12px; color: var(--text2); }
+    .step-time   { margin-left: auto; font-size: 11px; color: var(--text3); white-space: nowrap; }
+
+    /* ── Command block ─────────────────────────────────────────────────── */
+    .cmd-block {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.7;
+      position: relative;
+    }
+    .cmd-block .comment { color: var(--text3); }
+    .cmd-block .kw      { color: var(--blue);   }
+    .cmd-block .str     { color: var(--green);  }
+    .cmd-block .flag    { color: var(--yellow); }
+
+    /* ── Recommendations ───────────────────────────────────────────────── */
+    .rec-list { display: flex; flex-direction: column; gap: 10px; }
+    .rec-item {
+      display: flex;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--bg3);
+      border-radius: var(--radius);
+      border-left: 3px solid var(--border2);
+      font-size: 12.5px;
+    }
+    .rec-item.critical { border-left-color: var(--red); }
+    .rec-item.warning  { border-left-color: var(--yellow); }
+    .rec-item.info     { border-left-color: var(--blue); }
+    .rec-item.ok       { border-left-color: var(--green); }
+    .rec-icon { flex-shrink: 0; font-size: 16px; line-height: 1; }
+    .rec-text { color: var(--text); }
+    .rec-text .rec-cmd { font-family: monospace; font-size: 11px; color: var(--yellow); background: rgba(255,255,255,0.04); padding: 1px 6px; border-radius: 4px; }
+
+    /* ── Object Retention Path ─────────────────────────────────────────── */
+    .retention-path { display: flex; flex-direction: column; gap: 0; }
+    .rp-node {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 12px;
+      position: relative;
+    }
+    .rp-node:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: 22px;
+      top: 36px;
+      bottom: 0;
+      width: 1px;
+      background: var(--border2);
+    }
+    .rp-dot {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--bg3);
+      border: 2px solid var(--border2);
+      flex-shrink: 0;
+      margin-top: 3px;
+    }
+    .rp-node.root .rp-dot  { border-color: var(--purple); background: var(--purple-dim); }
+    .rp-node.leak .rp-dot  { border-color: var(--red);    background: var(--red-dim); }
+    .rp-node.mid  .rp-dot  { border-color: var(--blue);   background: var(--blue-dim); }
+    .rp-name  { font-family: monospace; font-size: 12px; color: var(--text); }
+    .rp-type  { font-size: 11px; color: var(--text3); }
+    .rp-edge  { font-size: 11px; color: var(--yellow); font-style: italic; margin-bottom: 1px; }
+
+    /* ── Floating Browser UI Reference ────────────────────────────────── */
+    .float-ui-preview {
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      border-radius: 12px;
+      padding: 16px;
+      width: 280px;
+      border: 1px solid rgba(255,255,255,0.15);
+      box-shadow: var(--shadow);
+      color: white;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .fui-title {
+      text-align: center;
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.15);
+    }
+    .fui-mem-bar-wrap { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-bottom: 6px; }
+    .fui-mem-bar {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, #4ade80 0%, #f59e0b 70%, #ef4444 100%);
+    }
+    .fui-mem-text { font-size: 11px; opacity: 0.75; text-align: center; margin-bottom: 12px; }
+    .fui-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 12.5px;
+      border-left: 4px solid;
+    }
+    .fui-btn-active  { background: rgba(59,130,246,0.2);  border-left-color: #3b82f6; }
+    .fui-btn-done    { background: rgba(34,197,94,0.15);  border-left-color: #22c55e; }
+    .fui-btn-pending { background: rgba(255,255,255,0.04);border-left-color: #6b7280; opacity: 0.55; }
+    .fui-btn-close   { background: rgba(239,68,68,0.2);   border-left-color: #ef4444; }
+    .fui-btn-icon { font-size: 15px; }
+    .fui-btn-label { font-weight: 600; }
+    .fui-btn-sub   { font-size: 10.5px; opacity: 0.65; }
+    .fui-bottom { display: flex; gap: 8px; margin-top: 10px; }
+    .fui-mini-btn {
+      flex: 1;
+      text-align: center;
+      padding: 7px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 6px;
+      font-size: 12px;
+      border-left: 3px solid;
+    }
+
+    /* ── Dropdown filter ───────────────────────────────────────────────── */
+    .filter-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .filter-select {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      outline: none;
+    }
+    .filter-select:focus { border-color: var(--blue); }
+    .filter-label { font-size: 12px; color: var(--text2); }
+
+    /* ── Empty State ───────────────────────────────────────────────────── */
+    .empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text3);
+    }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; }
+    .empty h3   { font-size: 15px; color: var(--text2); margin-bottom: 6px; }
+    .empty p    { font-size: 13px; }
+
+    /* ── Accordion ─────────────────────────────────────────────────────── */
+    .accordion-item { border-bottom: 1px solid var(--border); }
+    .accordion-item:last-child { border-bottom: none; }
+    .accordion-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 13px 20px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .accordion-head:hover { background: var(--bg3); }
+    .accordion-arrow { transition: transform 0.2s; color: var(--text3); }
+    .accordion-item.open .accordion-arrow { transform: rotate(90deg); }
+    .accordion-body {
+      display: none;
+      padding: 0 20px 16px;
+    }
+    .accordion-item.open .accordion-body { display: block; }
+
+    /* ── Responsive ────────────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+        grid-template-rows: 56px auto 1fr;
+        grid-template-areas:
+          "header"
+          "sidebar"
+          "main";
+      }
+      .sidebar { height: auto; position: static; flex-direction: row; flex-wrap: wrap; }
+      main { padding: 16px; }
+    }
+
+    /* ── Leak indicator dot on nav ─────────────────────────────────────── */
+    .leak-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--red);
+      margin-left: 4px;
+      display: inline-block;
+      vertical-align: middle;
+      box-shadow: 0 0 4px var(--red);
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-shell">
+  <!-- ── Sidebar ──────────────────────────────────────────────────── -->
+  <nav class="sidebar">
+    <span class="sidebar-section">Overview</span>
+    <div class="nav-item active" data-view="dashboard" onclick="showView(this)">
+      <span class="nav-icon">📊</span> Dashboard
+    </div>
+    <div class="nav-item" data-view="timeline" onclick="showView(this)">
+      <span class="nav-icon">📈</span> Timeline
+      <span class="nav-badge info" id="nav-event-count">—</span>
+    </div>
+
+    <span class="sidebar-section">Analysis</span>
+    <div class="nav-item" data-view="leaks" onclick="showView(this)">
+      <span class="nav-icon">🚨</span> Leak Detection
+      <span class="nav-badge" id="nav-leak-count" style="display:none">0</span>
+    </div>
+    <div class="nav-item" data-view="snapshots" onclick="showView(this)">
+      <span class="nav-icon">📷</span> Snapshots
+    </div>
+    <div class="nav-item" data-view="objects" onclick="showView(this)">
+      <span class="nav-icon">🔍</span> Object Inspector
+    </div>
+    <div class="nav-item" data-view="node" onclick="showView(this)">
+      <span class="nav-icon">🖥️</span> Node.js Monitor
+    </div>
+
+    <span class="sidebar-section">Workflow</span>
+    <div class="nav-item" data-view="browser" onclick="showView(this)">
+      <span class="nav-icon">🌐</span> Browser UI
+    </div>
+    <div class="nav-item" data-view="commands" onclick="showView(this)">
+      <span class="nav-icon">💻</span> Commands
+    </div>
+    <div class="nav-item" data-view="help" onclick="showView(this)">
+      <span class="nav-icon">📚</span> Help
+    </div>
+  </nav>
+
+  <!-- ── Header ──────────────────────────────────────────────────── -->
+  <header class="header">
+    <span style="font-size:20px;">🚀</span>
+    <span class="header-title">Heap Analyzer</span>
+    <span class="header-badge">v1.0.7</span>
+    <div class="header-status">
+      <span class="status-dot" id="header-dot"></span>
+      <span id="header-status-text">No data loaded</span>
+    </div>
+  </header>
+
+  <!-- ── Main ────────────────────────────────────────────────────── -->
+  <main>
+
+    <!-- ═══════════════════════════════════ DASHBOARD ══════════════ -->
+    <div class="view active" id="view-dashboard">
+      <div class="page-header">
+        <h1>Memory Analysis Dashboard</h1>
+        <p>Load a <code>TimelineSummary</code> JSON result or paste Node.js snapshot data to inspect heap usage, detect leaks, and trace problematic objects.</p>
+      </div>
+
+      <!-- Load data controls -->
+      <div class="card">
+        <div class="card-header">
+          <span class="nav-icon">📂</span>
+          <span class="card-title">Load Analysis Data</span>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">
+            <div style="flex:1;min-width:240px;">
+              <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Paste <strong>TimelineSummary JSON</strong> (output of <code>analyzeTimeline()</code>)</div>
+              <textarea id="json-input"
+                placeholder='{&#10;  "directory": "./snapshots",&#10;  "snapshotCount": 12,&#10;  "leakDetected": true,&#10;  "events": [...],&#10;  ...&#10;}'
+                style="width:100%;height:130px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+                       color:var(--text);padding:10px;font-family:monospace;font-size:11.5px;resize:vertical;outline:none;"></textarea>
+              <div style="display:flex;gap:8px;margin-top:8px;">
+                <button onclick="loadFromTextarea()" style="padding:7px 16px;background:var(--blue);color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Load JSON</button>
+                <button onclick="loadDemo()" style="padding:7px 16px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Load Demo</button>
+                <button onclick="clearAll()" style="padding:7px 16px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Clear</button>
+              </div>
+              <div id="load-error" style="color:var(--red);font-size:12px;margin-top:6px;display:none;"></div>
+            </div>
+            <div style="flex:1;min-width:200px;">
+              <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Or upload a <strong>.json</strong> file</div>
+              <label style="display:block;border:2px dashed var(--border);border-radius:8px;padding:24px;text-align:center;cursor:pointer;color:var(--text2);font-size:12px;transition:border-color 0.2s;"
+                     id="drop-zone">
+                <div style="font-size:28px;margin-bottom:8px;">📁</div>
+                Drop file here or click to browse
+                <input type="file" accept=".json" onchange="loadFromFile(event)" style="display:none" />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary stats (hidden until data loads) -->
+      <div id="dashboard-stats" style="display:none;">
+        <div class="stat-grid">
+          <div class="stat-card blue">
+            <div class="stat-label">Snapshots</div>
+            <div class="stat-value text-blue" id="stat-snapshots">—</div>
+            <div class="stat-sub" id="stat-duration">—</div>
+          </div>
+          <div class="stat-card" id="stat-leak-card">
+            <div class="stat-label">Leak Status</div>
+            <div class="stat-value" id="stat-leak">—</div>
+            <div class="stat-sub" id="stat-leak-sub">—</div>
+          </div>
+          <div class="stat-card yellow">
+            <div class="stat-label">Net Growth</div>
+            <div class="stat-value text-yellow" id="stat-growth">—</div>
+            <div class="stat-sub" id="stat-growth-sub">—</div>
+          </div>
+          <div class="stat-card purple">
+            <div class="stat-label">Memory Trend</div>
+            <div class="stat-value" id="stat-trend">—</div>
+            <div class="stat-sub" id="stat-trend-sub">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Critical Events</div>
+            <div class="stat-value text-red" id="stat-critical">—</div>
+            <div class="stat-sub">above threshold</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Peak Growth</div>
+            <div class="stat-value" id="stat-peak">—</div>
+            <div class="stat-sub" id="stat-peak-sub">—</div>
+          </div>
+        </div>
+
+        <!-- Heap overview -->
+        <div class="card">
+          <div class="card-header">
+            <span>💾</span>
+            <span class="card-title">Heap Overview</span>
+          </div>
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:16px;">
+              <div>
+                <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">Start Heap</div>
+                <div style="font-size:18px;font-weight:700;" id="ov-start">—</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">End Heap</div>
+                <div style="font-size:18px;font-weight:700;" id="ov-end">—</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">Threshold</div>
+                <div style="font-size:18px;font-weight:700;" id="ov-threshold">—</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">Directory</div>
+                <div style="font-size:12px;font-family:monospace;color:var(--text2);word-break:break-all;" id="ov-dir">—</div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Heap utilisation (start → end)</div>
+            <div class="mem-bar-wrap">
+              <div class="mem-bar" id="ov-bar" style="width:0%"></div>
+            </div>
+            <div style="font-size:11px;color:var(--text2);margin-top:6px;" id="ov-bar-label">—</div>
+          </div>
+        </div>
+
+        <!-- Recommendations -->
+        <div class="card" id="rec-card">
+          <div class="card-header">
+            <span>💡</span>
+            <span class="card-title">Recommendations</span>
+          </div>
+          <div class="card-body">
+            <div class="rec-list" id="rec-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty placeholder -->
+      <div id="dashboard-empty" class="empty">
+        <div class="empty-icon">🔬</div>
+        <h3>No analysis data loaded</h3>
+        <p>Paste a TimelineSummary JSON above or click <strong>Load Demo</strong> to explore with sample data.</p>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════ TIMELINE ════════════════ -->
+    <div class="view" id="view-timeline">
+      <div class="page-header">
+        <h1>Timeline Analysis</h1>
+        <p>Memory growth across consecutive snapshot pairs, with severity classification and trend detection.</p>
+      </div>
+
+      <div id="timeline-empty" class="empty">
+        <div class="empty-icon">📈</div>
+        <h3>No timeline data</h3>
+        <p>Load a TimelineSummary JSON on the Dashboard to populate this view.</p>
+      </div>
+
+      <div id="timeline-content" style="display:none;flex-direction:column;gap:24px;">
+        <!-- Chart -->
+        <div class="card">
+          <div class="card-header">
+            <span>📊</span>
+            <span class="card-title">Heap Growth Chart</span>
+            <div class="filter-row" style="margin-left:auto;">
+              <span class="filter-label">Mode:</span>
+              <select class="filter-select" id="chart-mode" onchange="renderChart()">
+                <option value="heap">Heap Size (MB)</option>
+                <option value="growth">Growth per Event (MB)</option>
+              </select>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="timeline-chart-wrap">
+              <svg id="timeline-svg" viewBox="0 0 800 200" preserveAspectRatio="none"></svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trend summary -->
+        <div class="card">
+          <div class="card-header">
+            <span>📉</span>
+            <span class="card-title">Trend Analysis</span>
+          </div>
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;" id="trend-grid"></div>
+          </div>
+        </div>
+
+        <!-- Events table -->
+        <div class="card">
+          <div class="card-header">
+            <span>📋</span>
+            <span class="card-title">Event Table</span>
+            <div class="filter-row" style="margin-left:auto;">
+              <span class="filter-label">Filter:</span>
+              <select class="filter-select" id="sev-filter" onchange="renderEventTable()">
+                <option value="all">All Severities</option>
+                <option value="critical">Critical</option>
+                <option value="warning">Warning</option>
+                <option value="info">Info</option>
+              </select>
+            </div>
+          </div>
+          <div class="card-body no-pad">
+            <div class="table-wrap">
+              <table id="event-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Severity</th>
+                    <th>Label / Operation</th>
+                    <th>Growth</th>
+                    <th>Growth %</th>
+                    <th>Heap Size</th>
+                    <th>Objects Δ</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody id="event-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════ LEAK DETECTION ══════════ -->
+    <div class="view" id="view-leaks">
+      <div class="page-header">
+        <h1>Leak Detection</h1>
+        <p>Critical events, problematic operations, and detailed leak diagnosis.</p>
+      </div>
+
+      <div id="leaks-empty" class="empty">
+        <div class="empty-icon">🚨</div>
+        <h3>No leak data</h3>
+        <p>Load a TimelineSummary JSON on the Dashboard first.</p>
+      </div>
+
+      <div id="leaks-content" style="display:none;flex-direction:column;gap:20px;">
+        <!-- Leak verdict -->
+        <div class="card" id="leak-verdict-card">
+          <div class="card-header">
+            <span>🔍</span>
+            <span class="card-title">Verdict</span>
+          </div>
+          <div class="card-body">
+            <div id="leak-verdict"></div>
+          </div>
+        </div>
+
+        <!-- Critical events -->
+        <div class="card">
+          <div class="card-header">
+            <span>🚨</span>
+            <span class="card-title">Critical Events</span>
+          </div>
+          <div class="card-body no-pad">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Operation / Label</th>
+                    <th>Growth</th>
+                    <th>Growth %</th>
+                    <th>Heap</th>
+                    <th>Objects Δ</th>
+                    <th>From → To</th>
+                  </tr>
+                </thead>
+                <tbody id="critical-tbody"></tbody>
+              </table>
+            </div>
+            <div id="critical-empty" class="empty" style="padding:30px;display:none;">
+              <div class="empty-icon">✅</div>
+              <h3>No critical events</h3>
+              <p>All snapshot transitions are below the leak threshold.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Problematic operations -->
+        <div class="card" id="prob-ops-card">
+          <div class="card-header">
+            <span>⚠️</span>
+            <span class="card-title">Problematic Operations</span>
+          </div>
+          <div class="card-body">
+            <div id="prob-ops-list"></div>
+          </div>
+        </div>
+
+        <!-- Suggested commands -->
+        <div class="card">
+          <div class="card-header">
+            <span>💻</span>
+            <span class="card-title">Suggested Investigation Commands</span>
+          </div>
+          <div class="card-body">
+            <div id="suggested-cmds"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════ SNAPSHOTS ════════════════ -->
+    <div class="view" id="view-snapshots">
+      <div class="page-header">
+        <h1>Snapshot Browser</h1>
+        <p>All .heapsnapshot files in the analysed directory, sorted by timestamp.</p>
+      </div>
+      <div id="snapshots-empty" class="empty">
+        <div class="empty-icon">📷</div>
+        <h3>No snapshot data</h3>
+        <p>Load a TimelineSummary JSON on the Dashboard first.</p>
+      </div>
+      <div id="snapshots-content" style="display:none;flex-direction:column;gap:16px;">
+        <div class="card">
+          <div class="card-header">
+            <span>📂</span>
+            <span class="card-title">Snapshot Files</span>
+          </div>
+          <div class="card-body no-pad">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Filename</th>
+                    <th>Timestamp</th>
+                    <th>Operation</th>
+                    <th>Request ID</th>
+                    <th>Heap (MB)</th>
+                    <th>Objects</th>
+                  </tr>
+                </thead>
+                <tbody id="snapshots-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════ OBJECT INSPECTOR ══════════ -->
+    <div class="view" id="view-objects">
+      <div class="page-header">
+        <h1>Object Inspector</h1>
+        <p>Paste memlab <code>find-leaks</code> or <code>investigate</code> JSON output to visualise retention paths and object graphs.</p>
+      </div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">
+        <div style="flex:1;min-width:260px;">
+          <div class="card">
+            <div class="card-header"><span>📋</span><span class="card-title">Retention Path Input</span></div>
+            <div class="card-body">
+              <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Paste a <code>retentionPath</code> array from an investigation JSON:</div>
+              <textarea id="rp-input"
+                placeholder='[&#10;  { "edge": "root", "edgeType": "root", "object": "global", "type": "synthetic", "nodeId": "1", "size": "0" },&#10;  { "edge": "myService", "edgeType": "property", "object": "MyService", "type": "object", "nodeId": "1234", "size": "2.5 KB" },&#10;  { "edge": "cache", "edgeType": "property", "object": "Map", "type": "object", "nodeId": "5678", "size": "48 MB" }&#10;]'
+                style="width:100%;height:160px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+                       color:var(--text);padding:10px;font-family:monospace;font-size:11.5px;resize:vertical;outline:none;"></textarea>
+              <button onclick="loadRetentionPath()" style="margin-top:8px;padding:7px 16px;background:var(--purple);color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Visualise Path</button>
+              <div id="rp-error" style="color:var(--red);font-size:12px;margin-top:6px;display:none;"></div>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:260px;">
+          <div class="card">
+            <div class="card-header"><span>🧭</span><span class="card-title">Retention Path Visualiser</span></div>
+            <div class="card-body">
+              <div id="rp-empty" style="color:var(--text3);font-size:13px;text-align:center;padding:20px;">Load a path on the left to visualise the retention chain.</div>
+              <div class="retention-path" id="rp-viz"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Object details accordion -->
+      <div class="card" id="obj-details-card" style="display:none;">
+        <div class="card-header"><span>🔬</span><span class="card-title">Object Details (from investigation JSON)</span></div>
+        <div class="card-body">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Paste <code>objectDetails</code> from an investigation record:</div>
+          <textarea id="obj-input"
+            placeholder='{ "id": "1234", "name": "MyService", "type": "object", "selfSizeBytes": 2560, "retainedSizeBytes": 50331648, "topReferences": [...], "topReferrers": [...] }'
+            style="width:100%;height:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+                   color:var(--text);padding:10px;font-family:monospace;font-size:11.5px;resize:vertical;outline:none;"></textarea>
+          <button onclick="loadObjectDetails()" style="margin-top:8px;padding:7px 16px;background:var(--blue);color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Load Details</button>
+        </div>
+      </div>
+      <div id="obj-detail-view" style="display:none;"></div>
+    </div>
+
+    <!-- ═══════════════════════════════════ NODE MONITOR ═══════════ -->
+    <div class="view" id="view-node">
+      <div class="page-header">
+        <h1>Node.js Monitor</h1>
+        <p>Workflow and reference for capturing and analysing heap snapshots from a running Node.js process.</p>
+      </div>
+
+      <!-- Method cards -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;">
+        <div class="card">
+          <div class="card-header"><span>🌐</span><span class="card-title">HTTP Endpoint Method</span></div>
+          <div class="card-body">
+            <p style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">Add a debug endpoint to your Node.js app that writes a heap snapshot on request.</p>
+            <div class="cmd-block"><span class="comment">// In your Express app:</span>
+<span class="kw">import</span> v8 from <span class="str">'node:v8'</span>;
+app.get(<span class="str">'/debug/heap-snapshot'</span>, (req, res) => {
+  const file = v8.writeHeapSnapshot();
+  res.json({ snapshot: file });
+});</div>
+            <div style="margin-top:12px;font-size:12px;color:var(--text2);">Then capture with:</div>
+            <div class="cmd-block" style="margin-top:6px;"><span class="kw">npx</span> heap-analyzer node-snapshot \
+  <span class="flag">--endpoint</span> http://localhost:3000/debug/heap-snapshot</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span>📡</span><span class="card-title">PID / Signal Method</span></div>
+          <div class="card-body">
+            <p style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">Send SIGUSR2 to a running process to trigger a snapshot (no code changes needed).</p>
+            <div class="cmd-block"><span class="comment"># Find your Node.js process PID</span>
+<span class="kw">pgrep</span> -f node
+
+<span class="comment"># Take a snapshot via signal</span>
+<span class="kw">npx</span> heap-analyzer node-snapshot \
+  <span class="flag">--pid</span> 12345</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span>📊</span><span class="card-title">Auto-Monitor Mode</span></div>
+          <div class="card-body">
+            <p style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">Watch a process and automatically snapshot when memory exceeds a threshold.</p>
+            <div class="cmd-block"><span class="kw">npx</span> heap-analyzer node-monitor \
+  <span class="flag">--pid</span> 12345 \
+  <span class="flag">--threshold</span> 500 \
+  <span class="flag">--interval</span> 5 \
+  <span class="flag">--webhook-url</span> https://hooks.slack.com/...</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span>🎯</span><span class="card-title">Load Test + Snapshots</span></div>
+          <div class="card-body">
+            <p style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">Generate heap snapshots throughout a load test to find leak patterns under traffic.</p>
+            <div class="cmd-block"><span class="kw">npx</span> heap-analyzer node-load-test \
+  http://localhost:3000/api/endpoint \
+  <span class="flag">--endpoint</span> http://localhost:3000/debug/heap-snapshot \
+  <span class="flag">--concurrency</span> 50 \
+  <span class="flag">--duration</span> 60</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Full 3-snapshot workflow -->
+      <div class="card">
+        <div class="card-header"><span>🔄</span><span class="card-title">Core 3-Snapshot Workflow</span></div>
+        <div class="card-body">
+          <div class="workflow-steps" id="node-workflow">
+            <div class="workflow-step done">
+              <div class="step-number">1</div>
+              <div>
+                <div class="step-label">Baseline Snapshot</div>
+                <div class="step-desc">App in clean state — captures initial heap footprint</div>
+              </div>
+            </div>
+            <div class="workflow-step active">
+              <div class="step-number">2</div>
+              <div>
+                <div class="step-label">Perform Actions</div>
+                <div class="step-desc">Execute the operations you suspect of causing a leak</div>
+              </div>
+            </div>
+            <div class="workflow-step pending">
+              <div class="step-number">3</div>
+              <div>
+                <div class="step-label">Target Snapshot</div>
+                <div class="step-desc">Captures heap after actions — shows memory that grew</div>
+              </div>
+            </div>
+            <div class="workflow-step pending">
+              <div class="step-number">4</div>
+              <div>
+                <div class="step-label">Wait &amp; GC</div>
+                <div class="step-desc">Wait 5–10 s for GC to reclaim short-lived objects</div>
+              </div>
+            </div>
+            <div class="workflow-step pending">
+              <div class="step-number">5</div>
+              <div>
+                <div class="step-label">Final Snapshot</div>
+                <div class="step-desc">Captures what survived GC — true leak candidates</div>
+              </div>
+            </div>
+            <div class="workflow-step pending">
+              <div class="step-number">6</div>
+              <div>
+                <div class="step-label">Find Leaks</div>
+                <div class="step-desc">Run <code>heap-analyzer find-leaks</code> across all 3 snapshots</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════ BROWSER UI ══════════════ -->
+    <div class="view" id="view-browser">
+      <div class="page-header">
+        <h1>Browser Floating UI</h1>
+        <p>When you run <code>heap-analyzer browser &lt;url&gt;</code>, a floating panel is injected into the target page for guided snapshot capture.</p>
+      </div>
+
+      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;">
+        <!-- Preview of the floating UI -->
+        <div class="float-ui-preview">
+          <div class="fui-title">🚀 Heap Analyzer</div>
+          <div class="fui-mem-bar-wrap">
+            <div class="fui-mem-bar" id="fui-bar" style="width:42%"></div>
+          </div>
+          <div class="fui-mem-text" id="fui-mem-text">Memory: 210 MB / 512 MB</div>
+          <div class="fui-btn fui-btn-done">
+            <span class="fui-btn-icon">📷</span>
+            <div>
+              <div class="fui-btn-label">1. Take Before Snapshot</div>
+              <div class="fui-btn-sub">Completed — 10:34:21 AM</div>
+            </div>
+          </div>
+          <div class="fui-btn fui-btn-active">
+            <span class="fui-btn-icon">📊</span>
+            <div>
+              <div class="fui-btn-label">2. Perform Actions</div>
+              <div class="fui-btn-sub">Take after snapshot when ready</div>
+            </div>
+          </div>
+          <div class="fui-btn fui-btn-pending">
+            <span class="fui-btn-icon">🎯</span>
+            <div>
+              <div class="fui-btn-label">3. Final + Analysis</div>
+              <div class="fui-btn-sub">Complete previous steps</div>
+            </div>
+          </div>
+          <div class="fui-btn fui-btn-pending" style="margin-bottom:0;">
+            <span class="fui-btn-icon">🚪</span>
+            <div>
+              <div class="fui-btn-label">4. Close &amp; Analyze</div>
+              <div class="fui-btn-sub">Analysis complete!</div>
+            </div>
+          </div>
+          <div class="fui-bottom">
+            <div class="fui-mini-btn" style="border-left-color:#ef4444;">🗑️ GC</div>
+            <div class="fui-mini-btn" style="border-left-color:#8b5cf6;">🏗️ DOM</div>
+          </div>
+        </div>
+
+        <!-- Explanation -->
+        <div style="flex:1;min-width:260px;display:flex;flex-direction:column;gap:16px;">
+          <div class="card">
+            <div class="card-header"><span>💻</span><span class="card-title">Launch Command</span></div>
+            <div class="card-body">
+              <div class="cmd-block"><span class="kw">npx</span> heap-analyzer browser http://localhost:3000
+
+<span class="comment"># With DevTools + custom script injection</span>
+<span class="kw">npx</span> heap-analyzer browser http://localhost:3000 \
+  <span class="flag">--devtools</span> \
+  <span class="flag">--inject-script</span> <span class="str">"window.debugMode = true"</span>
+
+<span class="comment"># Disable CSP for restricted sites</span>
+<span class="kw">npx</span> heap-analyzer browser https://app.example.com \
+  <span class="flag">--disable-csp</span> \
+  <span class="flag">--wait-until</span> networkidle0</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><span>🎮</span><span class="card-title">UI Controls</span></div>
+            <div class="card-body">
+              <div class="rec-list">
+                <div class="rec-item info">
+                  <span class="rec-icon">📷</span>
+                  <div class="rec-text"><strong>Before Snapshot</strong> — Captures the clean baseline heap. Click before performing any actions.</div>
+                </div>
+                <div class="rec-item info">
+                  <span class="rec-icon">📊</span>
+                  <div class="rec-text"><strong>After Snapshot</strong> — Unlocked after before. Click after performing your actions to record growth.</div>
+                </div>
+                <div class="rec-item info">
+                  <span class="rec-icon">🎯</span>
+                  <div class="rec-text"><strong>Final + Analysis</strong> — Forces GC then takes a final snapshot. Click after a pause to confirm leaks.</div>
+                </div>
+                <div class="rec-item warning">
+                  <span class="rec-icon">🗑️</span>
+                  <div class="rec-text"><strong>GC button</strong> — Triggers garbage collection via <span class="rec-cmd">window.gc()</span> or memory pressure loop.</div>
+                </div>
+                <div class="rec-item warning">
+                  <span class="rec-icon">🏗️</span>
+                  <div class="rec-text"><strong>DOM button</strong> — Calls <span class="rec-cmd">window.heapAnalyzer.getDOMInfo()</span> to count live DOM nodes.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Memory monitor animation -->
+      <div class="card">
+        <div class="card-header"><span>📡</span><span class="card-title">Live Memory Monitor (simulated)</span></div>
+        <div class="card-body">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">The floating UI reads <code>performance.memory</code> every 2 s. Below is a live simulation:</div>
+          <div class="mem-bar-wrap" style="height:12px;">
+            <div class="mem-bar" id="live-mem-bar" style="width:35%;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--text2);">
+            <span id="live-mem-text">Heap Used: ~180 MB</span>
+            <span id="live-mem-pct">35%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════ COMMANDS ════════════════ -->
+    <div class="view" id="view-commands">
+      <div class="page-header">
+        <h1>Command Reference</h1>
+        <p>All <code>heap-analyzer</code> CLI commands with flags and examples.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>🔍</span><span class="card-title">Snapshot Analysis</span></div>
+        <div id="cmd-accordion-analysis">
+          <div class="accordion-item">
+            <div class="accordion-head" onclick="toggleAccordion(this)">
+              <span class="accordion-arrow">▶</span>
+              <strong>analyze</strong>&nbsp;<span style="color:var(--text2);font-size:12px;">— Single snapshot: node counts, type breakdown, heap size</span>
+            </div>
+            <div class="accordion-body">
+              <div class="cmd-block"><span class="kw">npx</span> heap-analyzer analyze snapshot.heapsnapshot
+<span class="kw">npx</span> heap-analyzer analyze <span class="flag">--file</span> snapshot.heapsnapshot</div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <div class="accordion-head" onclick="toggleAccordion(this)">
+              <span class="accordion-arrow">▶</span>
+              <strong>compare</strong>&nbsp;<span style="color:var(--text2);font-size:12px;">— Side-by-side growth between two snapshots</span>
+            </div>
+            <div class="accordion-body">
+              <div class="cmd-block"><span class="kw">npx</span> heap-analyzer compare before.heapsnapshot after.heapsnapshot</div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <div class="accordion-head" onclick="toggleAccordion(this)">
+              <span class="accordion-arrow">▶</span>
+              <strong>timeline</strong>&nbsp;<span style="color:var(--text2);font-size:12px;">— Sequential trend analysis across a directory</span>
+            </div>
+            <div class="accordion-body">
+              <div class="cmd-block"><span class="kw">npx</span> heap-analyzer timeline ./snapshots
+<span class="kw">npx</span> heap-analyzer timeline ./snapshots <span class="flag">--threshold</span> 15</div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <div class="accordion-head" onclick="toggleAccordion(this)">
+              <span class="accordion-arrow">▶</span>
+              <strong>find-leaks</strong>&nbsp;<span style="color:var(--text2);font-size:12px;">— 3-snapshot memlab leak detection</span>
+            </div>
+            <div class="accordion-body">
+              <div class="cmd-block"><span class="comment"># 3 explicit files</span>
+<span class="kw">npx</span> heap-analyzer find-leaks \
+  <span class="flag">--baseline</span> baseline.heapsnapshot \
+  <span class="flag">--target</span>   target.heapsnapshot \
+  <span class="flag">--final</span>    final.heapsnapshot \
+  <span class="flag">--trace-all-objects</span>
+
+<span class="comment"># Directory with 3+ snapshots</span>
+<span class="kw">npx</span> heap-analyzer find-leaks <span class="flag">--snapshot-dir</span> ./snapshots/leak-test/</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>🧭</span><span class="card-title">Object Investigation</span></div>
+        <div>
+          <div class="accordion-item">
+            <div class="accordion-head" onclick="toggleAccordion(this)">
+              <span class="accordion-arrow">▶</span>
+              <strong>investigate</strong>&nbsp;<span style="color:var(--text2);font-size:12px;">— Combined inspect + trace + deep-dive in one command</span>
+            </div>
+            <div class="accordion-body">
+              <div class="cmd-block"><span class="kw">npx</span> heap-analyzer investigate snapshot.heapsnapshot <span class="flag">--object-id</span> @39263</div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <div class="accordion-head" onclick="toggleAccordion(this)">
+              <span class="accordion-arrow">▶</span>
+              <strong>trace</strong>&nbsp;<span style="color:var(--text2);font-size:12px;">— Retainer path for a specific node</span>
+            </div>
+            <div class="accordion-body">
+              <div class="cmd-block"><span class="kw">npx</span> heap-analyzer trace snapshot.heapsnapshot <span class="flag">--node-id</span> 170921</div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <div class="accordion-head" onclick="toggleAccordion(this)">
+              <span class="accordion-arrow">▶</span>
+              <strong>deep-dive</strong>&nbsp;<span style="color:var(--text2);font-size:12px;">— Recursive object hierarchy exploration</span>
+            </div>
+            <div class="accordion-body">
+              <div class="cmd-block"><span class="kw">npx</span> heap-analyzer deep-dive snapshot.heapsnapshot \
+  <span class="flag">--object-id</span>   @1096221 \
+  <span class="flag">--depth</span>       5 \
+  <span class="flag">--max-children</span> 20 \
+  <span class="flag">--output-format</span> json \
+  <span class="flag">--output-file</span>  ./analysis/deep-dive.json</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>🖥️</span><span class="card-title">Node.js Monitoring</span></div>
+        <div>
+          <div class="accordion-item">
+            <div class="accordion-head" onclick="toggleAccordion(this)">
+              <span class="accordion-arrow">▶</span>
+              <strong>node-snapshot</strong>&nbsp;<span style="color:var(--text2);font-size:12px;">— Capture snapshot from running process</span>
+            </div>
+            <div class="accordion-body">
+              <div class="cmd-block"><span class="kw">npx</span> heap-analyzer node-snapshot <span class="flag">--endpoint</span> http://localhost:3000/debug/heap-snapshot
+<span class="kw">npx</span> heap-analyzer node-snapshot <span class="flag">--pid</span> 12345</div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <div class="accordion-head" onclick="toggleAccordion(this)">
+              <span class="accordion-arrow">▶</span>
+              <strong>node-monitor</strong>&nbsp;<span style="color:var(--text2);font-size:12px;">— Threshold-based auto-snapshot</span>
+            </div>
+            <div class="accordion-body">
+              <div class="cmd-block"><span class="kw">npx</span> heap-analyzer node-monitor \
+  <span class="flag">--pid</span>       12345 \
+  <span class="flag">--threshold</span> 500 \
+  <span class="flag">--interval</span>  5</div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <div class="accordion-head" onclick="toggleAccordion(this)">
+              <span class="accordion-arrow">▶</span>
+              <strong>node-load-test</strong>&nbsp;<span style="color:var(--text2);font-size:12px;">— Snapshots during load test</span>
+            </div>
+            <div class="accordion-body">
+              <div class="cmd-block"><span class="kw">npx</span> heap-analyzer node-load-test http://localhost:3000/api/heavy \
+  <span class="flag">--endpoint</span>    http://localhost:3000/debug/heap-snapshot \
+  <span class="flag">--concurrency</span> 50 \
+  <span class="flag">--duration</span>    60</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════ HELP ════════════════════ -->
+    <div class="view" id="view-help">
+      <div class="page-header">
+        <h1>Help &amp; Documentation</h1>
+        <p>Quick reference for heap analysis concepts and interpreting results.</p>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;">
+        <div class="card">
+          <div class="card-header"><span>📖</span><span class="card-title">Key Concepts</span></div>
+          <div class="card-body">
+            <div class="rec-list">
+              <div class="rec-item info">
+                <span class="rec-icon">🌱</span>
+                <div class="rec-text"><strong>Baseline snapshot</strong> — Heap in a clean, known-good state before any suspect operations.</div>
+              </div>
+              <div class="rec-item info">
+                <span class="rec-icon">📈</span>
+                <div class="rec-text"><strong>Target snapshot</strong> — Heap after performing the operations you want to analyse.</div>
+              </div>
+              <div class="rec-item info">
+                <span class="rec-icon">🧹</span>
+                <div class="rec-text"><strong>Final snapshot</strong> — Heap after GC has run. Objects still alive here are true leak candidates.</div>
+              </div>
+              <div class="rec-item warning">
+                <span class="rec-icon">📊</span>
+                <div class="rec-text"><strong>Retainer path</strong> — The chain of references keeping a leaked object alive. The root is usually a global or closure.</div>
+              </div>
+              <div class="rec-item critical">
+                <span class="rec-icon">🚨</span>
+                <div class="rec-text"><strong>Critical event</strong> — A snapshot transition where heap grew by more than the configured threshold (default: 10 MB).</div>
+              </div>
+              <div class="rec-item ok">
+                <span class="rec-icon">✅</span>
+                <div class="rec-text"><strong>Stable trend</strong> — Average growth per event is &lt;10% of the threshold. Memory is healthy.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span>🏷️</span><span class="card-title">Severity Levels</span></div>
+          <div class="card-body">
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <span class="pill pill-info">info</span>
+                <span style="font-size:12.5px;color:var(--text2);">Growth &lt; 50% of threshold. Normal.</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;">
+                <span class="pill pill-warning">warning</span>
+                <span style="font-size:12.5px;color:var(--text2);">Growth 50–100% of threshold. Monitor closely.</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;">
+                <span class="pill pill-critical">critical</span>
+                <span style="font-size:12.5px;color:var(--text2);">Growth ≥ threshold. Likely a leak site.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span>📉</span><span class="card-title">Memory Trends</span></div>
+          <div class="card-body">
+            <div style="display:flex;flex-direction:column;gap:10px;font-size:12.5px;">
+              <div><strong class="text-green">✅ stable</strong> — Average growth &lt; 10% of threshold per event. Healthy.</div>
+              <div><strong class="text-red">📈 growing</strong> — Average growth &gt; 10% of threshold per event. Likely leaking.</div>
+              <div><strong class="text-blue">📉 shrinking</strong> — Average growth is negative. GC is reclaiming memory efficiently.</div>
+              <div><strong class="text-yellow">⚡ volatile</strong> — High std deviation. Memory spikes and drops; investigate burst allocations.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span>🔑</span><span class="card-title">Filename Convention</span></div>
+          <div class="card-body">
+            <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">heap-analyzer auto-parses structured snapshot filenames:</p>
+            <div class="cmd-block" style="font-size:11px;">heap-2025-12-03T19-32-37-260Z-startup.heapsnapshot
+
+heap-2025-12-03T19-42-55-976Z-request-start-op-beatHeartbeat_id-vsjvl25n.heapsnapshot
+<span class="comment">              └─timestamp──────────────────────┘  └─operation──┘  └─requestId─┘</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span>🔗</span><span class="card-title">Resources</span></div>
+        <div class="card-body">
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
+            <div>📄 <strong>README</strong> — Full command reference: <code>heap-analyzer --help</code></div>
+            <div>🤖 <strong>AGENT.md</strong> — AI agent diagnostic workflow guide</div>
+            <div>📦 <strong>memlab</strong> — Underlying engine: <code>facebook.github.io/memlab</code></div>
+            <div>🔬 <strong>Timeline analyser</strong> — <code>src/analyzers/timeline.ts</code> — structured typed summary</div>
+            <div>🖥️ <strong>Node analyser</strong> — <code>src/nodeAnalyzer.ts</code> — HTTP endpoint &amp; PID monitoring</div>
+            <div>🌐 <strong>Floating UI</strong> — <code>src/ui/components/FloatingHeapUI.ts</code> — browser overlay</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── JavaScript ──────────────────────────────────────────────────────── -->
+<script>
+'use strict';
+
+// ── State ───────────────────────────────────────────────────────────────
+let state = null; // TimelineSummary or null
+
+// ── View routing ────────────────────────────────────────────────────────
+function showView(el) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  el.classList.add('active');
+  const viewId = 'view-' + el.dataset.view;
+  document.getElementById(viewId).classList.add('active');
+}
+
+// ── Accordion ───────────────────────────────────────────────────────────
+function toggleAccordion(head) {
+  head.parentElement.classList.toggle('open');
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────
+function fmtMB(mb) {
+  if (mb == null || isNaN(mb)) return '—';
+  const sign = mb >= 0 ? (mb > 0 ? '+' : '') : '';
+  return `${sign}${mb.toFixed(2)} MB`;
+}
+function fmtNum(n) {
+  if (n == null || isNaN(n)) return '—';
+  return (n >= 0 ? '+' : '') + n.toLocaleString();
+}
+function fmtDuration(ms) {
+  if (!ms || isNaN(ms)) return '—';
+  if (ms < 1000) return ms + ' ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + ' s';
+  return (ms / 60000).toFixed(1) + ' min';
+}
+function severityPill(sev) {
+  const map = { info: 'pill-info', warning: 'pill-warning', critical: 'pill-critical' };
+  const label = { info: 'info', warning: '⚠ warn', critical: '🚨 crit' };
+  return `<span class="pill ${map[sev] || 'pill-info'}">${label[sev] || sev}</span>`;
+}
+function trendIcon(t) {
+  return { stable: '✅', growing: '📈', shrinking: '📉', volatile: '⚡' }[t] || '—';
+}
+
+// ── Update header status ─────────────────────────────────────────────────
+function updateHeader() {
+  const dot  = document.getElementById('header-dot');
+  const text = document.getElementById('header-status-text');
+  if (!state) {
+    dot.className = 'status-dot';
+    text.textContent = 'No data loaded';
+    return;
+  }
+  if (state.leakDetected) {
+    dot.className = 'status-dot error';
+    text.textContent = `Leak detected — ${state.criticalEvents?.length || 0} critical event(s)`;
+  } else if ((state.trend?.trend === 'growing') || (state.trend?.trend === 'volatile')) {
+    dot.className = 'status-dot warn';
+    text.textContent = `Trend: ${state.trend.trend} — monitor closely`;
+  } else {
+    dot.className = 'status-dot ok';
+    text.textContent = `${state.snapshotCount} snapshots — no leak detected`;
+  }
+}
+
+// ── Update nav badges ────────────────────────────────────────────────────
+function updateNavBadges() {
+  const ec = document.getElementById('nav-event-count');
+  const lc = document.getElementById('nav-leak-count');
+  if (!state) { ec.textContent = '—'; lc.style.display = 'none'; return; }
+  ec.textContent = state.events?.length ?? '0';
+  const critN = state.criticalEvents?.length ?? 0;
+  if (critN > 0) { lc.textContent = critN; lc.style.display = ''; }
+  else lc.style.display = 'none';
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────
+function renderDashboard() {
+  const s = state;
+  document.getElementById('dashboard-empty').style.display = s ? 'none' : '';
+  document.getElementById('dashboard-stats').style.display = s ? '' : 'none';
+  if (!s) return;
+
+  // Stats
+  document.getElementById('stat-snapshots').textContent = s.snapshotCount ?? '—';
+  document.getElementById('stat-duration').textContent  = fmtDuration(s.totalDurationMs);
+
+  const leakCard = document.getElementById('stat-leak-card');
+  const leakEl   = document.getElementById('stat-leak');
+  if (s.leakDetected) {
+    leakCard.className = 'stat-card red';
+    leakEl.innerHTML   = '<span class="text-red">🚨 LEAK</span>';
+    document.getElementById('stat-leak-sub').textContent = `${s.criticalEvents?.length || 0} critical event(s)`;
+  } else {
+    leakCard.className = 'stat-card green';
+    leakEl.innerHTML   = '<span class="text-green">✅ Clean</span>';
+    document.getElementById('stat-leak-sub').textContent = 'No leak detected';
+  }
+
+  const gMB = s.totalGrowthMB ?? 0;
+  document.getElementById('stat-growth').textContent = fmtMB(gMB).replace('+','');
+  document.getElementById('stat-growth-sub').textContent = `${(s.totalGrowthPercent ?? 0).toFixed(1)}% of start heap`;
+
+  const trend = s.trend;
+  document.getElementById('stat-trend').innerHTML = trend
+    ? `<span>${trendIcon(trend.trend)} ${trend.trend.toUpperCase()}</span>` : '—';
+  document.getElementById('stat-trend-sub').textContent = trend
+    ? `avg ${fmtMB(trend.avgGrowthPerEventMB)}/event` : '';
+
+  document.getElementById('stat-critical').textContent = s.criticalEvents?.length ?? 0;
+
+  const peak = trend?.peakGrowthMB ?? 0;
+  document.getElementById('stat-peak').textContent = fmtMB(peak);
+  document.getElementById('stat-peak-sub').textContent = trend?.peakEventIndex
+    ? `at event #${trend.peakEventIndex}` : '';
+
+  // Overview
+  document.getElementById('ov-start').textContent     = `${(s.startHeapMB ?? 0).toFixed(2)} MB`;
+  document.getElementById('ov-end').textContent       = `${(s.endHeapMB ?? 0).toFixed(2)} MB`;
+  document.getElementById('ov-threshold').textContent = `${s.leakThresholdMB ?? 10} MB`;
+  document.getElementById('ov-dir').textContent       = s.directory || '—';
+
+  const pct = s.startHeapMB > 0 ? Math.min(100, (s.endHeapMB / Math.max(s.endHeapMB, s.startHeapMB * 2)) * 100) : 50;
+  document.getElementById('ov-bar').style.width = pct + '%';
+  document.getElementById('ov-bar-label').textContent =
+    `Start: ${(s.startHeapMB??0).toFixed(2)} MB → End: ${(s.endHeapMB??0).toFixed(2)} MB (${(s.totalGrowthPercent??0).toFixed(1)}% growth)`;
+
+  // Recommendations
+  const recList = document.getElementById('rec-list');
+  recList.innerHTML = '';
+  const recs = s.recommendations || [];
+  if (recs.length === 0) {
+    recList.innerHTML = '<div class="rec-item ok"><span class="rec-icon">✅</span><div class="rec-text">No specific recommendations — heap looks healthy.</div></div>';
+  } else {
+    recs.forEach(r => {
+      const isCrit = r.includes('leak') || r.includes('Investigate') || r.includes('Compare');
+      const isCmd  = r.trim().startsWith('npx') || r.trim().startsWith('  npx');
+      let cls = 'info', icon = 'ℹ️';
+      if (s.leakDetected && isCrit) { cls = 'critical'; icon = '🚨'; }
+      else if (s.leakDetected)     { cls = 'warning';  icon = '⚠️'; }
+      if (isCmd) {
+        const prev = recList.lastElementChild;
+        if (prev) {
+          prev.querySelector('.rec-text').innerHTML +=
+            `<br><span class="rec-cmd">${r.trim()}</span>`;
+          return;
+        }
+      }
+      recList.innerHTML +=
+        `<div class="rec-item ${cls}"><span class="rec-icon">${icon}</span><div class="rec-text">${r}</div></div>`;
+    });
+  }
+}
+
+// ── Timeline ──────────────────────────────────────────────────────────────
+function renderTimeline() {
+  const hasData = state && state.events && state.events.length > 0;
+  document.getElementById('timeline-empty').style.display   = hasData ? 'none' : '';
+  const tc = document.getElementById('timeline-content');
+  tc.style.display = hasData ? 'flex' : 'none';
+  if (!hasData) return;
+
+  renderChart();
+  renderTrendGrid();
+  renderEventTable();
+}
+
+function renderChart() {
+  if (!state || !state.events) return;
+  const mode = document.getElementById('chart-mode').value;
+  const events = state.events;
+  const svg = document.getElementById('timeline-svg');
+  const W = 800, H = 200, PAD = 30;
+
+  const values = mode === 'heap'
+    ? events.map(e => e.heapSizeMB)
+    : events.map(e => e.growthMB);
+
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = maxV - minV || 1;
+
+  const px = (i) => PAD + (i / (events.length - 1 || 1)) * (W - PAD * 2);
+  const py = (v) => H - PAD - ((v - minV) / range) * (H - PAD * 2);
+
+  // Build polyline points
+  const pts = events.map((e, i) => {
+    const v = mode === 'heap' ? e.heapSizeMB : e.growthMB;
+    return `${px(i)},${py(v)}`;
+  }).join(' ');
+
+  // Area fill path
+  const firstX = px(0), lastX = px(events.length - 1);
+  const areaPath = `M${firstX},${H - PAD} L${pts.split(' ').map(p => p).join(' L')} L${lastX},${H - PAD} Z`;
+
+  // Severity colour per point
+  const circlesSVG = events.map((e, i) => {
+    const v = mode === 'heap' ? e.heapSizeMB : e.growthMB;
+    const col = e.severity === 'critical' ? '#f85149' : e.severity === 'warning' ? '#d29922' : '#3fb950';
+    const title = `${e.label}: ${fmtMB(mode === 'heap' ? e.heapSizeMB : e.growthMB)}`;
+    return `<circle cx="${px(i)}" cy="${py(v)}" r="4" fill="${col}" stroke="var(--bg3)" stroke-width="1.5"><title>${title}</title></circle>`;
+  }).join('');
+
+  // Y axis labels
+  const yLabels = [0, 0.25, 0.5, 0.75, 1].map(t => {
+    const v = minV + t * range;
+    const y = py(v);
+    return `<text x="${PAD - 4}" y="${y + 4}" text-anchor="end" fill="#6e7681" font-size="9">${v.toFixed(1)}</text>
+            <line x1="${PAD}" y1="${y}" x2="${W - PAD}" y2="${y}" stroke="#30363d" stroke-width="0.5" stroke-dasharray="3,3"/>`;
+  }).join('');
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="area-grad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#388bfd" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="#388bfd" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    ${yLabels}
+    <path d="${areaPath}" fill="url(#area-grad)"/>
+    <polyline points="${pts}" fill="none" stroke="#388bfd" stroke-width="2" stroke-linejoin="round"/>
+    ${circlesSVG}
+    <text x="${W/2}" y="${H - 4}" text-anchor="middle" fill="#6e7681" font-size="9">
+      ${mode === 'heap' ? 'Heap Size (MB) across events' : 'Growth (MB) per event'}
+    </text>
+  `;
+}
+
+function renderTrendGrid() {
+  const trend = state?.trend;
+  const grid = document.getElementById('trend-grid');
+  if (!trend) { grid.innerHTML = ''; return; }
+  grid.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Trend</div>
+      <div class="stat-value" style="font-size:18px;">${trendIcon(trend.trend)} ${trend.trend}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Growth/Event</div>
+      <div class="stat-value" style="font-size:18px;">${fmtMB(trend.avgGrowthPerEventMB)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Peak Growth</div>
+      <div class="stat-value" style="font-size:18px;">${fmtMB(trend.peakGrowthMB)}</div>
+      <div class="stat-sub">event #${trend.peakEventIndex}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Growing Events</div>
+      <div class="stat-value" style="font-size:18px;">${(trend.growingEventRatio * 100).toFixed(0)}%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Std Deviation</div>
+      <div class="stat-value" style="font-size:18px;">${trend.growthStdDevMB.toFixed(2)} MB</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Volatile</div>
+      <div class="stat-value" style="font-size:18px;">${trend.isVolatile ? '⚡ Yes' : '— No'}</div>
+    </div>
+  `;
+}
+
+function renderEventTable() {
+  if (!state || !state.events) return;
+  const filter = document.getElementById('sev-filter').value;
+  const events = filter === 'all' ? state.events : state.events.filter(e => e.severity === filter);
+  const tbody = document.getElementById('event-tbody');
+  if (events.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:24px;">No events match this filter.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = events.map(e => `
+    <tr>
+      <td class="mono">${e.index}</td>
+      <td>${severityPill(e.severity)}</td>
+      <td class="mono" style="max-width:200px;word-break:break-all;">${e.label}</td>
+      <td class="mono ${e.growthMB > 0 ? 'text-red' : 'text-green'}">${fmtMB(e.growthMB)}</td>
+      <td class="mono ${e.growthPercent > 0 ? 'text-yellow' : 'text-green'}">${e.growthPercent.toFixed(1)}%</td>
+      <td class="mono">${e.heapSizeMB.toFixed(2)} MB</td>
+      <td class="mono ${e.objectCountDelta > 0 ? 'text-red' : 'text-green'}">${fmtNum(e.objectCountDelta)}</td>
+      <td class="mono text-dim">${fmtDuration(e.durationMs)}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Leak Detection View ───────────────────────────────────────────────────
+function renderLeaks() {
+  const hasData = !!state;
+  document.getElementById('leaks-empty').style.display   = hasData ? 'none' : '';
+  const lc = document.getElementById('leaks-content');
+  lc.style.display = hasData ? 'flex' : 'none';
+  if (!hasData) return;
+
+  // Verdict
+  const verdict = document.getElementById('leak-verdict');
+  if (state.leakDetected) {
+    verdict.innerHTML = `
+      <div class="rec-item critical" style="margin-bottom:12px;">
+        <span class="rec-icon">🚨</span>
+        <div class="rec-text">
+          <strong>Memory leak detected.</strong> Total growth of ${fmtMB(state.totalGrowthMB)} exceeds
+          the threshold of ${state.leakThresholdMB} MB, with ${state.criticalEvents?.length} critical event(s).
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:12px;">
+        <div class="stat-card red"><div class="stat-label">Total Growth</div><div class="stat-value text-red" style="font-size:18px;">${fmtMB(state.totalGrowthMB)}</div></div>
+        <div class="stat-card red"><div class="stat-label">Threshold</div><div class="stat-value text-red" style="font-size:18px;">${state.leakThresholdMB} MB</div></div>
+        <div class="stat-card red"><div class="stat-label">Critical Events</div><div class="stat-value text-red" style="font-size:18px;">${state.criticalEvents?.length ?? 0}</div></div>
+      </div>`;
+  } else {
+    verdict.innerHTML = `
+      <div class="rec-item ok">
+        <span class="rec-icon">✅</span>
+        <div class="rec-text">
+          <strong>No significant leak detected.</strong> Total growth of ${fmtMB(state.totalGrowthMB)} is
+          ${state.totalGrowthMB < state.leakThresholdMB ? 'below' : 'within'} the ${state.leakThresholdMB} MB threshold.
+        </div>
+      </div>`;
+  }
+
+  // Critical events table
+  const critList = state.criticalEvents || [];
+  const ctbody = document.getElementById('critical-tbody');
+  const cempty = document.getElementById('critical-empty');
+  if (critList.length === 0) {
+    ctbody.innerHTML = '';
+    cempty.style.display = '';
+  } else {
+    cempty.style.display = 'none';
+    ctbody.innerHTML = critList.map(e => `
+      <tr>
+        <td class="mono">${e.index}</td>
+        <td class="mono" style="max-width:180px;word-break:break-all;">${e.label}</td>
+        <td class="mono text-red">${fmtMB(e.growthMB)}</td>
+        <td class="mono text-yellow">${e.growthPercent.toFixed(1)}%</td>
+        <td class="mono">${e.heapSizeMB.toFixed(2)} MB</td>
+        <td class="mono text-red">${fmtNum(e.objectCountDelta)}</td>
+        <td class="mono text-dim" style="font-size:11px;max-width:200px;word-break:break-all;">${e.fromSnapshot} → ${e.toSnapshot}</td>
+      </tr>
+    `).join('');
+  }
+
+  // Problematic operations
+  const ops = state.problematicOperations || [];
+  const opsList = document.getElementById('prob-ops-list');
+  if (ops.length === 0) {
+    opsList.innerHTML = '<div style="color:var(--text3);font-size:13px;">No problematic operations identified.</div>';
+  } else {
+    opsList.innerHTML = ops.map(op => `
+      <div style="display:inline-flex;align-items:center;gap:6px;background:var(--red-dim);border:1px solid var(--red);
+                  color:var(--red);border-radius:6px;padding:4px 12px;margin:4px;font-size:12px;font-weight:600;">
+        ⚠ ${op}
+      </div>`).join('');
+  }
+
+  // Suggested commands
+  const cmds = document.getElementById('suggested-cmds');
+  const critEvents = state.criticalEvents || [];
+  if (critEvents.length === 0) {
+    cmds.innerHTML = '<div style="color:var(--text3);font-size:13px;">No critical events — no specific investigation needed.</div>';
+  } else {
+    const worst = [...critEvents].sort((a, b) => b.growthMB - a.growthMB)[0];
+    cmds.innerHTML = `
+      <div class="cmd-block"><span class="comment"># Analyse the worst offender snapshot</span>
+<span class="kw">npx</span> heap-analyzer analyze <span class="str">"${worst.toSnapshot}"</span>
+
+<span class="comment"># Compare worst offender against its predecessor</span>
+<span class="kw">npx</span> heap-analyzer compare \
+  <span class="str">"${worst.fromSnapshot}"</span> \
+  <span class="str">"${worst.toSnapshot}"</span>
+
+<span class="comment"># Find leaks across the directory</span>
+<span class="kw">npx</span> heap-analyzer find-leaks \
+  <span class="flag">--snapshot-dir</span> <span class="str">"${state.directory}"</span> \
+  <span class="flag">--trace-all-objects</span>
+
+<span class="comment"># Investigate a leaked object (replace &lt;@id&gt; with memlab output)</span>
+<span class="kw">npx</span> heap-analyzer investigate <span class="str">"${worst.toSnapshot}"</span> \
+  <span class="flag">--object-id</span> @&lt;id&gt;</div>`;
+  }
+}
+
+// ── Snapshots View ────────────────────────────────────────────────────────
+function renderSnapshots() {
+  const hasData = state && state.events && state.events.length > 0;
+  document.getElementById('snapshots-empty').style.display  = hasData ? 'none' : '';
+  const sc = document.getElementById('snapshots-content');
+  sc.style.display = hasData ? 'flex' : 'none';
+  if (!hasData) return;
+
+  // Build a deduplicated snapshot list from events
+  const seen = new Set();
+  const rows = [];
+  let idx = 1;
+
+  // First snapshot (from first event)
+  if (state.events[0]) {
+    const e0 = state.events[0];
+    if (!seen.has(e0.fromSnapshot)) {
+      seen.add(e0.fromSnapshot);
+      rows.push({ idx: idx++, name: e0.fromSnapshot, ts: state.startTime, op: '—', rid: '—', heap: state.startHeapMB, objs: '—' });
+    }
+  }
+  state.events.forEach(e => {
+    if (!seen.has(e.toSnapshot)) {
+      seen.add(e.toSnapshot);
+      rows.push({ idx: idx++, name: e.toSnapshot, ts: null, op: e.label || '—', rid: '—', heap: e.heapSizeMB, objs: e.objectCountDelta });
+    }
+  });
+
+  document.getElementById('snapshots-tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td class="mono">${r.idx}</td>
+      <td class="mono" style="max-width:260px;word-break:break-all;font-size:11px;">${r.name}</td>
+      <td class="mono text-dim" style="font-size:11px;">${r.ts ? new Date(r.ts).toLocaleString() : '—'}</td>
+      <td class="mono">${r.op}</td>
+      <td class="mono text-dim">${r.rid}</td>
+      <td class="mono">${typeof r.heap === 'number' ? r.heap.toFixed(2) : '—'}</td>
+      <td class="mono text-dim">${typeof r.objs === 'number' ? r.objs.toLocaleString() : '—'}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Object Inspector ──────────────────────────────────────────────────────
+function loadRetentionPath() {
+  const raw = document.getElementById('rp-input').value.trim();
+  const err = document.getElementById('rp-error');
+  const viz = document.getElementById('rp-viz');
+  const empty = document.getElementById('rp-empty');
+  err.style.display = 'none';
+  viz.innerHTML = '';
+
+  let path;
+  try { path = JSON.parse(raw); } catch (e) {
+    err.textContent = 'Invalid JSON: ' + e.message;
+    err.style.display = '';
+    return;
+  }
+  if (!Array.isArray(path)) {
+    err.textContent = 'Expected a JSON array of path nodes.';
+    err.style.display = '';
+    return;
+  }
+
+  empty.style.display = 'none';
+  viz.innerHTML = path.map((node, i) => {
+    const cls = i === 0 ? 'root' : i === path.length - 1 ? 'leak' : 'mid';
+    return `
+      <div class="rp-node ${cls}">
+        <div class="rp-dot"></div>
+        <div>
+          ${i > 0 ? `<div class="rp-edge">──${node.edge || '?'}──▶ (${node.edgeType || ''})</div>` : ''}
+          <div class="rp-name">${node.object || node.name || 'unknown'}</div>
+          <div class="rp-type">${node.type || ''} @${node.nodeId || '?'} · ${node.size || '?'}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Show object details card after path load
+  document.getElementById('obj-details-card').style.display = '';
+}
+
+function loadObjectDetails() {
+  const raw = document.getElementById('obj-input').value.trim();
+  let obj;
+  try { obj = JSON.parse(raw); } catch (e) { return; }
+
+  const view = document.getElementById('obj-detail-view');
+  view.style.display = '';
+
+  const selfKB = obj.selfSizeBytes ? (obj.selfSizeBytes / 1024).toFixed(1) : '—';
+  const retMB  = obj.retainedSizeBytes ? (obj.retainedSizeBytes / 1024 / 1024).toFixed(2) : '—';
+
+  const refRows = (obj.topReferences || []).map(r =>
+    `<tr><td class="mono">${r.name || '—'}</td><td class="mono text-dim">${r.type || '—'}</td><td class="mono text-dim">${r.toNode || '—'}</td></tr>`
+  ).join('') || '<tr><td colspan="3" style="color:var(--text3)">None</td></tr>';
+
+  const rerRows = (obj.topReferrers || []).map(r =>
+    `<tr><td class="mono">${r.name || '—'}</td><td class="mono text-dim">${r.type || '—'}</td><td class="mono text-dim">${r.fromNode || '—'}</td></tr>`
+  ).join('') || '<tr><td colspan="3" style="color:var(--text3)">None</td></tr>';
+
+  view.innerHTML = `
+    <div class="card">
+      <div class="card-header"><span>🔬</span><span class="card-title">${obj.name || 'Object'} @${obj.id || '?'}</span></div>
+      <div class="card-body">
+        <div class="stat-grid" style="margin-bottom:16px;">
+          <div class="stat-card"><div class="stat-label">Type</div><div class="stat-value" style="font-size:16px;">${obj.type || '—'}</div></div>
+          <div class="stat-card"><div class="stat-label">Self Size</div><div class="stat-value text-yellow" style="font-size:16px;">${selfKB} KB</div></div>
+          <div class="stat-card red"><div class="stat-label">Retained Size</div><div class="stat-value text-red" style="font-size:16px;">${retMB} MB</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Top References (out)</div>
+            <div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>To Node</th></tr></thead><tbody>${refRows}</tbody></table></div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Top Referrers (in)</div>
+            <div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>From Node</th></tr></thead><tbody>${rerRows}</tbody></table></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── Data loading ─────────────────────────────────────────────────────────
+function applyData(data) {
+  state = data;
+  updateHeader();
+  updateNavBadges();
+  renderDashboard();
+  renderTimeline();
+  renderLeaks();
+  renderSnapshots();
+}
+
+function loadFromTextarea() {
+  const raw = document.getElementById('json-input').value.trim();
+  const err = document.getElementById('load-error');
+  err.style.display = 'none';
+  try {
+    const data = JSON.parse(raw);
+    applyData(data);
+  } catch (e) {
+    err.textContent = '❌ Invalid JSON: ' + e.message;
+    err.style.display = '';
+  }
+}
+
+function loadFromFile(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try { applyData(JSON.parse(e.target.result)); }
+    catch (err) { alert('Failed to parse JSON: ' + err.message); }
+  };
+  reader.readAsText(file);
+}
+
+function clearAll() {
+  state = null;
+  document.getElementById('json-input').value = '';
+  document.getElementById('load-error').style.display = 'none';
+  updateHeader();
+  updateNavBadges();
+  renderDashboard();
+  renderTimeline();
+  renderLeaks();
+  renderSnapshots();
+}
+
+// ── Demo data (realistic TimelineSummary) ─────────────────────────────────
+function loadDemo() {
+  const makeSnap = (op, i) =>
+    `heap-2025-12-03T19-${String(30 + i * 2).padStart(2,'0')}-00-000Z-${op}.heapsnapshot`;
+
+  const ops = ['startup','request-start-op-beatHeartbeat','request-start-op-processData',
+                'request-start-op-buildIndex','request-start-op-cacheWarm',
+                'request-start-op-beatHeartbeat','request-start-op-processData',
+                'request-start-op-buildIndex','request-start-op-cacheWarm',
+                'request-start-op-beatHeartbeat','request-start-op-processData','shutdown'];
+
+  const heaps = [42.1, 44.8, 53.2, 68.7, 71.3, 74.9, 83.4, 98.1, 101.2, 104.8, 115.6, 118.3];
+
+  const events = [];
+  for (let i = 0; i < ops.length - 1; i++) {
+    const gMB = heaps[i + 1] - heaps[i];
+    const gPct = (gMB / heaps[i]) * 100;
+    const sev = gMB >= 10 ? 'critical' : gMB >= 5 ? 'warning' : 'info';
+    events.push({
+      index: i + 1,
+      fromSnapshot: makeSnap(ops[i], i),
+      toSnapshot: makeSnap(ops[i + 1], i + 1),
+      label: ops[i + 1].replace('request-start-op-', ''),
+      durationMs: 120000 + Math.random() * 60000,
+      growthMB: parseFloat(gMB.toFixed(2)),
+      growthPercent: parseFloat(gPct.toFixed(2)),
+      heapSizeMB: heaps[i + 1],
+      objectCountDelta: Math.round(gMB * 850),
+      severity: sev,
+      isCritical: sev === 'critical'
+    });
+  }
+
+  const criticalEvents = events.filter(e => e.isCritical);
+
+  const demo = {
+    directory: './snapshots/production-trace-2025-12-03',
+    startTime: '2025-12-03T19:30:00.000Z',
+    endTime:   '2025-12-03T19:52:00.000Z',
+    totalDurationMs: 22 * 60 * 1000,
+    snapshotCount: ops.length,
+    startHeapMB: heaps[0],
+    endHeapMB: heaps[heaps.length - 1],
+    totalGrowthMB: parseFloat((heaps[heaps.length - 1] - heaps[0]).toFixed(2)),
+    totalGrowthPercent: parseFloat(((heaps[heaps.length-1] - heaps[0]) / heaps[0] * 100).toFixed(2)),
+    leakDetected: true,
+    leakThresholdMB: 10,
+    events,
+    trend: {
+      trend: 'growing',
+      avgGrowthPerEventMB: parseFloat(((heaps[heaps.length-1] - heaps[0]) / events.length).toFixed(2)),
+      peakGrowthMB: 14.7,
+      peakEventIndex: 3,
+      growingEventRatio: 1.0,
+      growthStdDevMB: 3.41,
+      isVolatile: false
+    },
+    criticalEvents,
+    problematicOperations: ['buildIndex', 'processData'],
+    recommendations: [
+      `Memory is growing at an average of ${((heaps[heaps.length-1] - heaps[0]) / events.length).toFixed(2)} MB per event.`,
+      'Investigate whether objects accumulated during these events are being released.',
+      'Investigate these high-growth snapshots:',
+      `  npx heap-analyzer analyze "${makeSnap('request-start-op-buildIndex', 3)}"`,
+      'Compare the worst offender against its predecessor:',
+      `  npx heap-analyzer compare "${makeSnap('request-start-op-processData', 2)}" "${makeSnap('request-start-op-buildIndex', 3)}"`
+    ]
+  };
+
+  document.getElementById('json-input').value = JSON.stringify(demo, null, 2);
+  applyData(demo);
+}
+
+// ── Live memory simulation (browser UI view) ──────────────────────────────
+let liveMemTarget = 35;
+let liveMem = 35;
+setInterval(() => {
+  liveMemTarget += (Math.random() - 0.4) * 4;
+  liveMemTarget = Math.max(10, Math.min(85, liveMemTarget));
+  liveMem += (liveMemTarget - liveMem) * 0.15;
+  const pct = liveMem.toFixed(0);
+  const mb  = (liveMem * 5.12).toFixed(0);
+  const bar = document.getElementById('live-mem-bar');
+  const txt = document.getElementById('live-mem-text');
+  const pctEl = document.getElementById('live-mem-pct');
+  if (bar)  bar.style.width = pct + '%';
+  if (txt)  txt.textContent = `Heap Used: ~${mb} MB`;
+  if (pctEl) pctEl.textContent = pct + '%';
+
+  // Also animate the floating UI preview memory bar
+  const fuiBar  = document.getElementById('fui-bar');
+  const fuiText = document.getElementById('fui-mem-text');
+  if (fuiBar)  fuiBar.style.width = pct + '%';
+  if (fuiText) fuiText.textContent = `Memory: ${mb} MB / 512 MB`;
+}, 800);
+
+// ── Drop zone drag/drop ───────────────────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+if (dropZone) {
+  ['dragenter','dragover'].forEach(evt => dropZone.addEventListener(evt, e => {
+    e.preventDefault();
+    dropZone.style.borderColor = 'var(--blue)';
+  }));
+  ['dragleave','drop'].forEach(evt => dropZone.addEventListener(evt, () => {
+    dropZone.style.borderColor = '';
+  }));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try { applyData(JSON.parse(ev.target.result)); }
+      catch (err) { alert('Failed to parse JSON: ' + err.message); }
+    };
+    reader.readAsText(file);
+  });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+updateHeader();
+updateNavBadges();
+</script>
+</body>
+</html>
