@@ -2,7 +2,7 @@
 
 This guide walks you through the complete process of analyzing memory leaks using the heap-analyzer tool - from collecting snapshots to identifying and fixing specific leaks.
 
-## 🎯 Complete 4-Step Diagnostic Workflow
+## 🎯 Complete 5-Step Diagnostic Workflow
 
 ### Step 1: Collect Heap Snapshots
 
@@ -115,14 +115,12 @@ Window → NativeContext → ScriptContextTable → <function scope> → memoryL
                                                             This is your leak source!
 ```
 
-### Step 4: Interpret Results & Fix
-
-**Understanding the Trace:**
+**Interpreting the trace:**
 - **Window** → Global scope (browser environment)
 - **memoryLeakArray** → Your variable name causing the leak
 - **Array (52.3MB)** → The leaked object and its size
 
-**Action Items:**
+**Action items:**
 1. **Identify the variable**: Look for `memoryLeakArray` in your code
 2. **Find the retention**: Check why it's not being cleaned up
 3. **Fix the leak**: Clear references, remove event listeners, etc.
@@ -185,13 +183,16 @@ heap-analyzer heap final.heapsnapshot
 # analyze-leaks.sh
 
 echo "🔍 Running memory leak analysis..."
-heap-analyzer find-leaks --trace-all-objects > leak-report.txt
+npx heap-analyzer find-leaks \
+  --baseline snapshots/baseline.heapsnapshot \
+  --target snapshots/target.heapsnapshot \
+  --final snapshots/final.heapsnapshot \
+  --trace-all-objects > leak-report.txt
 
 # Extract node IDs and trace them
-grep "Node ID:" leak-report.txt | while read -r line; do
-    node_id=$(echo $line | grep -o '[0-9]\+')
+grep -o '@[0-9]\+' leak-report.txt | tr -d '@' | while read -r node_id; do
     echo "Tracing node $node_id..."
-    heap-analyzer trace final.heapsnapshot --node-id $node_id >> trace-results.txt
+    npx heap-analyzer trace snapshots/final.heapsnapshot --node-id $node_id >> trace-results.txt
 done
 
 echo "✅ Analysis complete! Check leak-report.txt and trace-results.txt"
@@ -202,21 +203,26 @@ echo "✅ Analysis complete! Check leak-report.txt and trace-results.txt"
 # .github/workflows/memory-analysis.yml
 - name: Analyze Memory Leaks
   run: |
-    npm run test:memory  # Generate snapshots
-    heap-analyzer find-leaks --trace-all-objects
+    npm run test:memory  # Generates snapshots/baseline, target, final
+    npx heap-analyzer find-leaks \
+      --baseline snapshots/baseline.heapsnapshot \
+      --target snapshots/target.heapsnapshot \
+      --final snapshots/final.heapsnapshot \
+      --trace-all-objects
     # Fail build if leaks > threshold
 ```
 
 ## 🚨 Critical Workflow Notes
 
-### **Two-Step Process Required**
-1. **Step 1**: `heap-analyzer find-leaks --trace-all-objects` → Gets node IDs
-2. **Step 2**: `heap-analyzer trace snapshot.heapsnapshot --node-id XXXXX` → Gets retention paths
+### **The Critical Two-Command Pair (Steps 4 & 5)**
+1. **Step 4**: `npx heap-analyzer find-leaks --baseline ... --target ... --final ... --trace-all-objects` → Gets node IDs
+2. **Step 5**: `npx heap-analyzer trace final.heapsnapshot --node-id XXXXX` → Gets retention paths
 
 ### **Common Mistakes to Avoid**
 - ❌ **Forgetting `--trace-all-objects`** → No node IDs, can't trace objects
+- ❌ **Omitting `--baseline`/`--target`/`--final`** → find-leaks requires all three snapshot files
 - ❌ **Running find-leaks without final snapshot** → May get "missing tabs" warning
-- ❌ **Trying to trace without node IDs** → Need Step 1 output first
+- ❌ **Trying to trace without running find-leaks first** → Node IDs come from find-leaks output
 - ❌ **Tracing every object** → Focus on largest leaks first (MB range)
 
 ### **Flag Requirements**
@@ -240,41 +246,49 @@ echo "✅ Analysis complete! Check leak-report.txt and trace-results.txt"
 
 ## 📝 Best Practices
 
-1. **Always start with find-leaks + --trace-all-objects** - gives you node IDs for tracing
-2. **Two-step workflow is mandatory** - find-leaks first, then trace specific objects
-3. **Prioritize by size** - trace big leaks first (52MB Array vs 248-byte objects)
-4. **Use node IDs from find-leaks output** - copy exact IDs like @170921, @628662
-5. **Trace before fixing** - understand the retention path (`memoryLeakArray` variable)
-6. **Verify fixes** - re-run analysis after changes
-7. **Automate detection** - integrate into your CI/CD pipeline
+1. **Follow the 5-step workflow in order** — analyze and compare first; find-leaks comes after you understand the growth patterns
+2. **Always pass `--trace-all-objects` to find-leaks** — without it you get no node IDs and cannot trace
+3. **Always pass `--baseline`/`--target`/`--final` to find-leaks** — all three snapshot files are required
+4. **Prioritize by size** — trace big leaks first (MB range vs 248-byte objects)
+5. **Use node IDs from find-leaks output** — copy exact numeric IDs like `170921`, `628662`
+6. **Trace before fixing** — understand the full retention path before changing code
+7. **Verify fixes** — re-run the full workflow after changes
+8. **Automate detection** — integrate into your CI/CD pipeline
 
 ## 📋 Complete Command Chain for Comprehensive Reports
 
 ### **Full Diagnostic Workflow:**
 ```bash
-# Step 1: Analyze individual snapshots (understanding)
-heap-analyzer analyze baseline.heapsnapshot
-heap-analyzer analyze target.heapsnapshot
-heap-analyzer analyze final.heapsnapshot
+# Step 1: Place snapshots in ./snapshots/ directory (manual)
 
-# Step 2: Compare snapshots (growth pattern analysis)
-heap-analyzer compare baseline.heapsnapshot target.heapsnapshot
+# Step 2: Analyze individual snapshots (understanding)
+npx heap-analyzer analyze snapshots/baseline.heapsnapshot
+npx heap-analyzer analyze snapshots/target.heapsnapshot
+npx heap-analyzer analyze snapshots/final.heapsnapshot
 
-# Step 3: Find leaks with node IDs (leak detection)
-heap-analyzer find-leaks --baseline baseline.heapsnapshot --target target.heapsnapshot --final final.heapsnapshot --trace-all-objects
+# Step 3: Compare snapshots (growth pattern analysis)
+npx heap-analyzer compare snapshots/baseline.heapsnapshot snapshots/target.heapsnapshot
 
-# Step 4: Trace biggest leaks (root cause analysis)
-heap-analyzer trace final.heapsnapshot --node-id 170921  # 52.3MB Array
-heap-analyzer trace final.heapsnapshot --node-id 628662  # PerformanceEventTiming
-heap-analyzer trace final.heapsnapshot --node-id 628670  # DOMTimer
+# Step 4: Find leaks with node IDs (leak detection)
+npx heap-analyzer find-leaks \
+  --baseline snapshots/baseline.heapsnapshot \
+  --target snapshots/target.heapsnapshot \
+  --final snapshots/final.heapsnapshot \
+  --trace-all-objects
+
+# Step 5: Trace biggest leaks (root cause analysis — use node IDs from Step 4 output)
+npx heap-analyzer trace snapshots/final.heapsnapshot --node-id 170921  # 52.3MB Array
+npx heap-analyzer trace snapshots/final.heapsnapshot --node-id 628662  # PerformanceEventTiming
+npx heap-analyzer trace snapshots/final.heapsnapshot --node-id 628670  # DOMTimer
 ```
 
 ### **What Each Step Provides for Your Report:**
 
-1. **📊 Individual Analysis**: Baseline health metrics for each snapshot
-2. **📈 Growth Analysis**: Pattern recognition and diagnostic hints
-3. **🔍 Leak Detection**: Specific leaked objects with sizes and node IDs
-4. **🎯 Root Cause**: Exact variable names and retention paths
+1. **📂 Snapshot Collection** (Step 1): Captured snapshots representing clean state, leaked state, and post-cleanup state
+2. **📊 Individual Analysis** (Step 2): Baseline health metrics and object composition for each snapshot
+3. **📈 Growth Analysis** (Step 3): Pattern recognition, diagnostic hints, and object type deltas
+4. **🔍 Leak Detection** (Step 4): Specific leaked objects with sizes and node IDs
+5. **🎯 Root Cause** (Step 5): Exact variable names and full retention paths
 
 ### **Professional Report Structure:**
 ```
