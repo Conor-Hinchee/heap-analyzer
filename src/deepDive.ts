@@ -66,7 +66,7 @@ export async function deepDiveObject(
     followArrays,
     followObjects,
     showPrimitives
-  }, { start: Date.now(), timeBudgetMs, maxNodes, visitedRef: { value: 0 } });
+  }, { start: Date.now(), timeBudgetMs, maxNodes, visitedRef: { value: 0 }, visited: new Set<string>() });
 
   if (detectPatterns) {
     detectCommonPatterns(root);
@@ -82,7 +82,7 @@ async function exploreNode(
   maxDepth: number,
   maxChildren: number,
   options: { followArrays: boolean; followObjects: boolean; showPrimitives: boolean },
-  budget: { start: number; timeBudgetMs: number; maxNodes: number; visitedRef: { value: number } }
+  budget: { start: number; timeBudgetMs: number; maxNodes: number; visitedRef: { value: number }; visited: Set<string> }
 ): Promise<DeepDiveNode> {
   // Budget checks
   if (Date.now() - budget.start > budget.timeBudgetMs) {
@@ -110,11 +110,25 @@ async function exploreNode(
     };
   }
   budget.visitedRef.value += 1;
-  
-    // Fetch object data (now uses caching internally)
+
+  // Cycle detection: track visited node IDs to prevent infinite loops on circular references
   const cleanId = objectId.replace('@', '');
-  
-    // Show progress only at depth 0 and 1 to avoid spam
+  if (budget.visited.has(cleanId)) {
+    return {
+      nodeId: cleanId,
+      name: '🔄 circular-ref',
+      type: 'info',
+      selfSize: 0,
+      retainedSize: 0,
+      depth: currentDepth,
+      children: [],
+      summary: `Circular reference detected — node @${cleanId} already visited`
+    };
+  }
+  budget.visited.add(cleanId);
+
+  // Fetch object data (now uses caching internally)
+  // Show progress only at depth 0 and 1 to avoid spam
     if (currentDepth <= 1) {
       console.log(`${'  '.repeat(currentDepth)}├─ Inspecting @${cleanId} (depth ${currentDepth})`);
     }
