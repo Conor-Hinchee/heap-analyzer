@@ -2097,19 +2097,196 @@ if (dropZone) {
   dropZone.addEventListener('drop', e => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (!file) return;
+if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => {
-      try { applyData(JSON.parse(ev.target.result)); }
-      catch (err) { alert('Failed to parse JSON: ' + err.message); }
+      try {
+        applyData(JSON.parse(ev.target.result));
+      } catch (err) {
+        alert('Failed to parse heap data: ' + err.message);
+      }
     };
     reader.readAsText(file);
   });
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────
-updateHeader();
-updateNavBadges();
-</script>
+/* Render live memory chart */
+function renderLiveMemChart() {
+  const canvas = document.getElementById('live-mem-canvas');
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  const w = canvas.offsetWidth;
+  const h = canvas.offsetHeight;
+  
+  // Simple animated line chart
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, w, h);
+  
+  ctx.strokeStyle = '#3fb950';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  
+  const points = 100;
+  for (let i = 0; i < points; i++) {
+    const x = (i / points) * w;
+    const y = h - (liveMemHistory[i] || 0) / 100 * h;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  
+  // Current value indicator
+  ctx.fillStyle = '#3fb950';
+  ctx.font = 'bold 12px monospace';
+  ctx.fillText(liveMem.toFixed(1) + ' MB', 10, 20);
+}
+
+/* Update metrics display */
+function updateMetrics() {
+  const total = document.getElementById('metric-total');
+  const external = document.getElementById('metric-external');
+  const arrayBuf = document.getElementById('metric-array');
+  
+  if (total && heapData) {
+    total.textContent = (heapData.total_heap_size / 1024 / 1024).toFixed(2) + ' MB';
+  }
+  if (external && heapData) {
+    external.textContent = (heapData.external_memory_usage / 1024 / 1024).toFixed(2) + ' MB';
+  }
+  if (arrayBuf && heapData) {
+    const abSize = heapData.array_buffers_size || 0;
+    arrayBuf.textContent = (abSize / 1024 / 1024).toFixed(2) + ' MB';
+  }
+}
+
+/* Timeline view renderer */
+function renderTimeline() {
+  const container = document.getElementById('timeline-list');
+  if (!container || !timelineData) return;
+  
+  container.innerHTML = '';
+  (timelineData.snapshots || []).slice(0, 20).forEach((snap, i) => {
+    const item = document.createElement('div');
+    item.className = 'timeline-item';
+    item.innerHTML = `
+      <div class="timeline-time">${new Date(snap.timestamp).toLocaleTimeString()}</div>
+      <div class="timeline-info">
+        <span class="timeline-size">${(snap.heap_size / 1024 / 1024).toFixed(2)} MB</span>
+        <span class="timeline-delta">${snap.delta_mb ? (snap.delta_mb > 0 ? '+' : '') + snap.delta_mb.toFixed(2) : '–'} MB</span>
+      </div>
+    `;
+    container.appendChild(item);
+  });
+}
+
+/* Object table renderer */
+function renderObjectTable() {
+  const table = document.getElementById('objects-table');
+  if (!table || !heapData) return;
+  
+  const tbody = table.querySelector('tbody') || (() => {
+    const tbody = document.createElement('tbody');
+    table.appendChild(tbody);
+    return tbody;
+  })();
+  
+  tbody.innerHTML = '';
+  
+  const objects = heapData.objects || [];
+  const sorted = objects.sort((a, b) => (b.retained_size || 0) - (a.retained_size || 0));
+  
+  sorted.slice(0, 50).forEach(obj => {
+    const row = tbody.insertRow();
+    row.innerHTML = `
+      <td>${obj.constructor || 'Unknown'}</td>
+      <td>${(obj.size / 1024).toFixed(1)} KB</td>
+      <td>${(obj.retained_size / 1024).toFixed(1)} KB</td>
+      <td>${obj.count || 1}</td>
+    `;
+  });
+}
+
+/* Search/filter objects */
+function filterObjects(query) {
+  const rows = document.querySelectorAll('#objects-table tbody tr');
+  rows.forEach(row => {
+    const text = row.textContent.toLowerCase();
+    row.style.display = text.includes(query.toLowerCase()) ? '' : 'none';
+  });
+}
+
+/* Tab switching */
+document.querySelectorAll('[data-tab]').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const tabName = tab.dataset.tab;
+    document.querySelectorAll('[data-tab]').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('[data-tab-pane]').forEach(p => p.style.display = 'none');
+    
+    tab.classList.add('active');
+    const pane = document.querySelector(`[data-tab-pane="${tabName}"]`);
+    if (pane) pane.style.display = 'block';
+    
+    if (tabName === 'timeline') renderTimeline();
+    if (tabName === 'objects') renderObjectTable();
+  });
+});
+
+/* Search input handler */
+const searchInput = document.getElementById('search-objects');
+if (searchInput) {
+  searchInput.addEventListener('input', e => filterObjects(e.target.value));
+}
+
+/* Load sample data on startup */
+function loadDefaultData() {
+  const defaultHeap = {
+    timestamp: new Date().toISOString(),
+    total_heap_size: 52428800,
+    total_heap_executable_size: 1048576,
+    total_physical_size: 41943040,
+    total_available_size: 2143289344,
+    external_memory_usage: 5242880,
+    array_buffers_size: 10485760,
+    objects: [
+      { constructor: 'Array', size: 1024000, retained_size: 2048000, count: 512 },
+      { constructor: 'Object', size: 512000, retained_size: 1024000, count: 1024 },
+      { constructor: 'String', size: 256000, retained_size: 512000, count: 2048 },
+      { constructor: 'Buffer', size: 2097152, retained_size: 4194304, count: 8 },
+      { constructor: 'Function', size: 128000, retained_size: 256000, count: 256 },
+    ]
+  };
+  
+  const defaultTimeline = {
+    snapshots: Array.from({ length: 20 }, (_, i) => ({
+      timestamp: Date.now() - (20 - i) * 60000,
+      heap_size: 50000000 + Math.random() * 5000000,
+      delta_mb: (Math.random() - 0.5) * 2
+    }))
+  };
+  
+  applyData(defaultHeap);
+  timelineData = defaultTimeline;
+  renderTimeline();
+}
+
+/* Initialize on page load */
+window.addEventListener('DOMContentLoaded', () => {
+  loadDefaultData();
+  updateMetrics();
+  renderObjectTable();
+  
+  // Start live memory animation
+  setInterval(() => {
+    liveMemTarget += (Math.random() - 0.4) * 4;
+    liveMemTarget = Math.max(10, Math.min(95, liveMemTarget));
+    liveMem += (liveMemTarget - liveMem) * 0.1;
+    liveMemHistory.push(liveMem);
+    if (liveMemHistory.length > 100) liveMemHistory.shift();
+    renderLiveMemChart();
+  }, 100);
+});
+
+  </script>
 </body>
 </html>
