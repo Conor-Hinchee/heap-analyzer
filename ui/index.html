@@ -971,7 +971,156 @@
     <div class="view" id="view-node">
       <div class="page-header">
         <h1>Node.js Monitor</h1>
-        <p>Workflow and reference for capturing and analysing heap snapshots from a running Node.js process.</p>
+        <p>Load a <code>NodejsHeapSummary</code> JSON (output of <code>analyzeNodejsSnapshot()</code>) to visualise node type breakdown, top consumers, and detected leak patterns.</p>
+      </div>
+
+      <!-- NodejsHeapSummary loader -->
+      <div class="card">
+        <div class="card-header">
+          <span>📂</span>
+          <span class="card-title">Load NodejsHeapSummary JSON</span>
+        </div>
+        <div class="card-body">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Paste the JSON output of <code>analyzeNodejsSnapshot()</code> from <code>src/analyzers/nodejs.ts</code>:</div>
+          <textarea id="node-json-input"
+            placeholder='{&#10;  "meta": { "filename": "heap.heapsnapshot", "nodeCount": 150000, ... },&#10;  "totalHeapSizeMB": 52.4,&#10;  "nodeTypeStats": [...],&#10;  "topConsumers": [...],&#10;  "leakPatterns": [...],&#10;  ...&#10;}'
+            style="width:100%;height:110px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+                   color:var(--text);padding:10px;font-family:monospace;font-size:11.5px;resize:vertical;outline:none;"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+            <button onclick="loadNodeSnapshot()" style="padding:7px 16px;background:var(--blue);color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Analyse Snapshot</button>
+            <button onclick="loadNodeDemo()" style="padding:7px 16px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Load Demo</button>
+            <button onclick="clearNodeSnapshot()" style="padding:7px 16px;background:var(--bg3);color:var(--text2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;">Clear</button>
+          </div>
+          <div id="node-load-error" style="color:var(--red);font-size:12px;margin-top:6px;display:none;"></div>
+        </div>
+      </div>
+
+      <!-- NodejsHeapSummary results (hidden until data loaded) -->
+      <div id="node-analysis-panel" style="display:none;flex-direction:column;gap:20px;">
+
+        <!-- Meta stats -->
+        <div class="card">
+          <div class="card-header"><span>📊</span><span class="card-title">Snapshot Overview</span></div>
+          <div class="card-body">
+            <div class="stat-grid">
+              <div class="stat-card blue">
+                <div class="stat-label">Heap Size</div>
+                <div class="stat-value text-blue" id="ns-heapsize">—</div>
+              </div>
+              <div class="stat-card" id="ns-critical-card">
+                <div class="stat-label">Critical Issues</div>
+                <div class="stat-value" id="ns-critical">—</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Node Count</div>
+                <div class="stat-value" id="ns-nodes">—</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Edge Count</div>
+                <div class="stat-value" id="ns-edges">—</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">File Size</div>
+                <div class="stat-value" id="ns-filesize">—</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">V8 Version</div>
+                <div class="stat-value" style="font-size:14px;" id="ns-v8ver">—</div>
+              </div>
+            </div>
+            <div style="margin-top:10px;font-size:12px;color:var(--text3);">File: <span class="mono" id="ns-filename" style="color:var(--text2);">—</span></div>
+          </div>
+        </div>
+
+        <!-- Node type breakdown -->
+        <div class="card">
+          <div class="card-header"><span>🔵</span><span class="card-title">Node Type Breakdown (top 8)</span></div>
+          <div class="card-body">
+            <div style="display:grid;grid-template-columns:90px 1fr 70px 60px;gap:4px;margin-bottom:8px;">
+              <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;">Type</div>
+              <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;">Size</div>
+              <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;text-align:right;">MB</div>
+              <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;text-align:right;">%</div>
+            </div>
+            <div id="ns-type-chart"></div>
+          </div>
+        </div>
+
+        <!-- Top consumers table -->
+        <div class="card">
+          <div class="card-header"><span>🏆</span><span class="card-title">Top Memory Consumers</span></div>
+          <div class="card-body no-pad">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Self Size</th>
+                    <th>Node ID</th>
+                  </tr>
+                </thead>
+                <tbody id="ns-consumers-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Leak patterns -->
+        <div class="card">
+          <div class="card-header"><span>🚨</span><span class="card-title">Detected Leak Patterns</span></div>
+          <div class="card-body">
+            <div class="rec-list" id="ns-leak-patterns"></div>
+          </div>
+        </div>
+
+        <!-- String analysis -->
+        <div class="card">
+          <div class="card-header"><span>🔤</span><span class="card-title">String Analysis</span></div>
+          <div class="card-body">
+            <div class="stat-grid" style="margin-bottom:16px;">
+              <div class="stat-card">
+                <div class="stat-label">Total Strings</div>
+                <div class="stat-value" style="font-size:18px;" id="ns-str-total">—</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Unique Values</div>
+                <div class="stat-value" style="font-size:18px;" id="ns-str-unique">—</div>
+              </div>
+              <div class="stat-card yellow">
+                <div class="stat-label">Total Size</div>
+                <div class="stat-value text-yellow" style="font-size:18px;" id="ns-str-size">—</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Dup Concern</div>
+                <div class="stat-value" style="font-size:18px;" id="ns-str-dup">—</div>
+              </div>
+            </div>
+            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px;">Top Repeated Strings</div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Value</th><th>Count</th><th>Total Size</th></tr></thead>
+                <tbody id="ns-dup-strings-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recommendations -->
+        <div class="card">
+          <div class="card-header"><span>💡</span><span class="card-title">Recommendations</span></div>
+          <div class="card-body">
+            <div class="rec-list" id="ns-recs"></div>
+          </div>
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">
+
+      <div class="page-header" style="margin-top:8px;">
+        <h1 style="font-size:17px;">Capture Methods &amp; Workflow</h1>
+        <p>Reference for capturing snapshots from a running Node.js process.</p>
       </div>
 
       <!-- Method cards -->
@@ -1670,10 +1819,14 @@ function renderTrendGrid() {
   const trend = state?.trend;
   const grid = document.getElementById('trend-grid');
   if (!trend) { grid.innerHTML = ''; return; }
+  const trendColor = { stable: 'green', growing: 'red', shrinking: 'blue', volatile: 'yellow' }[trend.trend] || '';
+  const gcCount = trend.gcRecoveryCount ?? 0;
+  const gcReclaimed = trend.totalGcReclaimedMB ?? 0;
+  const avgRate = trend.avgGrowthRateMBPerSec ?? 0;
   grid.innerHTML = `
-    <div class="stat-card">
+    <div class="stat-card ${trendColor}">
       <div class="stat-label">Trend</div>
-      <div class="stat-value" style="font-size:18px;">${trendIcon(trend.trend)} ${trend.trend}</div>
+      <div class="stat-value text-${trendColor}" style="font-size:18px;">${trendIcon(trend.trend)} ${trend.trend}</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Avg Growth/Event</div>
@@ -1682,19 +1835,28 @@ function renderTrendGrid() {
     <div class="stat-card">
       <div class="stat-label">Peak Growth</div>
       <div class="stat-value" style="font-size:18px;">${fmtMB(trend.peakGrowthMB)}</div>
-      <div class="stat-sub">event #${trend.peakEventIndex}</div>
+      <div class="stat-sub">event #${trend.peakEventIndex ?? '—'}</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Growing Events</div>
-      <div class="stat-value" style="font-size:18px;">${(trend.growingEventRatio * 100).toFixed(0)}%</div>
+      <div class="stat-value" style="font-size:18px;">${((trend.growingEventRatio ?? 0) * 100).toFixed(0)}%</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Std Deviation</div>
-      <div class="stat-value" style="font-size:18px;">${trend.growthStdDevMB.toFixed(2)} MB</div>
+      <div class="stat-value" style="font-size:18px;">${(trend.growthStdDevMB ?? 0).toFixed(2)} MB</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Volatile</div>
       <div class="stat-value" style="font-size:18px;">${trend.isVolatile ? '⚡ Yes' : '— No'}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Growth Rate</div>
+      <div class="stat-value" style="font-size:18px;">${avgRate.toFixed(3)} MB/s</div>
+    </div>
+    <div class="stat-card ${gcCount > 0 ? 'green' : ''}">
+      <div class="stat-label">GC Recoveries</div>
+      <div class="stat-value ${gcCount > 0 ? 'text-green' : ''}" style="font-size:18px;">${gcCount}</div>
+      <div class="stat-sub">${gcCount > 0 ? gcReclaimed.toFixed(2) + ' MB reclaimed' : 'no GC events'}</div>
     </div>
   `;
 }
@@ -2110,181 +2272,246 @@ if (!file) return;
   });
 }
 
-/* Render live memory chart */
-function renderLiveMemChart() {
-  const canvas = document.getElementById('live-mem-canvas');
-  if (!canvas) return;
-  
-  const ctx = canvas.getContext('2d');
-  const w = canvas.offsetWidth;
-  const h = canvas.offsetHeight;
-  
-  // Simple animated line chart
-  ctx.fillStyle = '#0d1117';
-  ctx.fillRect(0, 0, w, h);
-  
-  ctx.strokeStyle = '#3fb950';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  
-  const points = 100;
-  for (let i = 0; i < points; i++) {
-    const x = (i / points) * w;
-    const y = h - (liveMemHistory[i] || 0) / 100 * h;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+// ── NodejsHeapSummary state ───────────────────────────────────────────────
+let nodeState = null; // NodejsHeapSummary or null
+
+// ── NodejsHeapSummary rendering ───────────────────────────────────────────
+function renderNodeView() {
+  const hasNode = !!nodeState;
+  const panel = document.getElementById('node-analysis-panel');
+  if (!panel) return;
+  panel.style.display = hasNode ? 'flex' : 'none';
+  if (!hasNode) return;
+
+  const s = nodeState;
+
+  // Meta stats
+  document.getElementById('ns-filename').textContent  = s.meta?.filename || '—';
+  document.getElementById('ns-nodes').textContent     = (s.meta?.nodeCount || 0).toLocaleString();
+  document.getElementById('ns-edges').textContent     = (s.meta?.edgeCount || 0).toLocaleString();
+  document.getElementById('ns-filesize').textContent  = s.meta?.fileSizeBytes
+    ? (s.meta.fileSizeBytes / 1024 / 1024).toFixed(2) + ' MB' : '—';
+  document.getElementById('ns-heapsize').textContent  = (s.totalHeapSizeMB || 0).toFixed(2) + ' MB';
+  document.getElementById('ns-v8ver').textContent     = s.meta?.v8Version || '—';
+  document.getElementById('ns-critical').textContent  = s.hasCriticalIssues ? '🚨 Yes' : '✅ No';
+  document.getElementById('ns-critical').className    = s.hasCriticalIssues ? 'stat-value text-red' : 'stat-value text-green';
+
+  // Node type breakdown bar chart
+  const typeChart = document.getElementById('ns-type-chart');
+  const types = (s.nodeTypeStats || []).slice(0, 8);
+  const maxMB = Math.max(...types.map(t => t.selfSizeMB), 0.001);
+  typeChart.innerHTML = types.map(t => {
+    const pct = Math.max(1, (t.selfSizeMB / maxMB) * 100);
+    const barColor = t.heapFraction > 0.3 ? 'var(--red)' : t.heapFraction > 0.15 ? 'var(--yellow)' : 'var(--blue)';
+    return `
+      <div style="display:grid;grid-template-columns:90px 1fr 70px 60px;gap:8px;align-items:center;margin-bottom:6px;">
+        <div style="font-family:monospace;font-size:11.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.type}">${t.type}</div>
+        <div style="background:var(--bg);border-radius:3px;height:10px;overflow:hidden;">
+          <div style="width:${pct}%;height:100%;background:${barColor};border-radius:3px;transition:width 0.4s;"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text2);text-align:right;">${t.selfSizeMB.toFixed(2)} MB</div>
+        <div style="font-size:11px;color:var(--text3);text-align:right;">${(t.heapFraction * 100).toFixed(1)}%</div>
+      </div>`;
+  }).join('') || '<div style="color:var(--text3)">No type data available.</div>';
+
+  // Top consumers table
+  const consTbody = document.getElementById('ns-consumers-tbody');
+  const consumers = (s.topConsumers || []).slice(0, 15);
+  consTbody.innerHTML = consumers.map((c, i) => `
+    <tr>
+      <td class="mono">${i + 1}</td>
+      <td class="mono" style="max-width:200px;word-break:break-all;">${c.name || '(unnamed)'}</td>
+      <td class="mono text-dim">${c.type}</td>
+      <td class="mono text-yellow">${(c.selfSizeBytes / 1024).toFixed(1)} KB</td>
+      <td class="mono text-dim">${c.nodeId}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" style="color:var(--text3);text-align:center;padding:16px;">No consumers data.</td></tr>';
+
+  // Leak patterns
+  const leakList = document.getElementById('ns-leak-patterns');
+  const patterns = s.leakPatterns || [];
+  if (patterns.length === 0) {
+    leakList.innerHTML = '<div class="rec-item ok"><span class="rec-icon">✅</span><div class="rec-text">No leak patterns detected.</div></div>';
+  } else {
+    leakList.innerHTML = patterns.map(p => {
+      const cls = p.severity === 'critical' ? 'critical' : p.severity === 'warning' ? 'warning' : 'info';
+      const icon = p.severity === 'critical' ? '🚨' : p.severity === 'warning' ? '⚠️' : 'ℹ️';
+      const sizeMB = (p.totalSizeBytes / 1024 / 1024).toFixed(2);
+      return `
+        <div class="rec-item ${cls}">
+          <span class="rec-icon">${icon}</span>
+          <div class="rec-text">
+            <strong>${p.category}</strong> — ${p.description}<br>
+            <span style="color:var(--text3);font-size:11px;">${p.matchCount.toLocaleString()} nodes · ${sizeMB} MB</span><br>
+            <span class="rec-cmd">${p.recommendation}</span>
+          </div>
+        </div>`;
+    }).join('');
   }
-  ctx.stroke();
-  
-  // Current value indicator
-  ctx.fillStyle = '#3fb950';
-  ctx.font = 'bold 12px monospace';
-  ctx.fillText(liveMem.toFixed(1) + ' MB', 10, 20);
-}
 
-/* Update metrics display */
-function updateMetrics() {
-  const total = document.getElementById('metric-total');
-  const external = document.getElementById('metric-external');
-  const arrayBuf = document.getElementById('metric-array');
-  
-  if (total && heapData) {
-    total.textContent = (heapData.total_heap_size / 1024 / 1024).toFixed(2) + ' MB';
+  // String analysis
+  const sa = s.stringAnalysis;
+  if (sa) {
+    document.getElementById('ns-str-total').textContent  = (sa.totalStringCount || 0).toLocaleString();
+    document.getElementById('ns-str-unique').textContent = (sa.uniqueValueCount || 0).toLocaleString();
+    document.getElementById('ns-str-size').textContent   = ((sa.totalStringSizeBytes || 0) / 1024 / 1024).toFixed(2) + ' MB';
+    document.getElementById('ns-str-dup').textContent    = sa.isDuplicationConcern ? '⚠ Yes' : '—';
+    document.getElementById('ns-str-dup').style.color    = sa.isDuplicationConcern ? 'var(--yellow)' : 'var(--text3)';
+
+    const dupTbody = document.getElementById('ns-dup-strings-tbody');
+    const top = (sa.topRepeatedStrings || []).slice(0, 10);
+    dupTbody.innerHTML = top.map(r => `
+      <tr>
+        <td class="mono" style="max-width:220px;word-break:break-all;">${escHtml(r.value)}</td>
+        <td class="mono">${r.count.toLocaleString()}</td>
+        <td class="mono text-yellow">${(r.totalSizeBytes / 1024).toFixed(1)} KB</td>
+      </tr>
+    `).join('') || '<tr><td colspan="3" style="color:var(--text3);padding:12px;">No repeated strings.</td></tr>';
   }
-  if (external && heapData) {
-    external.textContent = (heapData.external_memory_usage / 1024 / 1024).toFixed(2) + ' MB';
+
+  // Recommendations
+  const recList = document.getElementById('ns-recs');
+  const recs = s.recommendations || [];
+  if (recs.length === 0) {
+    recList.innerHTML = '<div class="rec-item ok"><span class="rec-icon">✅</span><div class="rec-text">No specific recommendations.</div></div>';
+  } else {
+    recList.innerHTML = recs.map(r => {
+      const isCmd = r.trim().startsWith('npx');
+      if (isCmd) return `<div style="margin:4px 0 4px 32px;"><span class="rec-cmd">${r.trim()}</span></div>`;
+      const isCrit = r.toLowerCase().includes('leak') || r.toLowerCase().includes('critical');
+      return `<div class="rec-item ${isCrit ? 'critical' : 'info'}"><span class="rec-icon">${isCrit ? '🚨' : 'ℹ️'}</span><div class="rec-text">${r}</div></div>`;
+    }).join('');
   }
-  if (arrayBuf && heapData) {
-    const abSize = heapData.array_buffers_size || 0;
-    arrayBuf.textContent = (abSize / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+function loadNodeSnapshot() {
+  const raw = document.getElementById('node-json-input')?.value?.trim();
+  const err = document.getElementById('node-load-error');
+  if (!raw) return;
+  err.style.display = 'none';
+  try {
+    const data = JSON.parse(raw);
+    // Validate it looks like a NodejsHeapSummary
+    if (!data.meta || data.totalHeapSizeMB === undefined) {
+      throw new Error('Does not look like a NodejsHeapSummary — expected meta.filename and totalHeapSizeMB fields.');
+    }
+    nodeState = data;
+    renderNodeView();
+  } catch(e) {
+    err.textContent = '❌ ' + e.message;
+    err.style.display = '';
   }
 }
 
-/* Timeline view renderer */
-function renderTimeline() {
-  const container = document.getElementById('timeline-list');
-  if (!container || !timelineData) return;
-  
-  container.innerHTML = '';
-  (timelineData.snapshots || []).slice(0, 20).forEach((snap, i) => {
-    const item = document.createElement('div');
-    item.className = 'timeline-item';
-    item.innerHTML = `
-      <div class="timeline-time">${new Date(snap.timestamp).toLocaleTimeString()}</div>
-      <div class="timeline-info">
-        <span class="timeline-size">${(snap.heap_size / 1024 / 1024).toFixed(2)} MB</span>
-        <span class="timeline-delta">${snap.delta_mb ? (snap.delta_mb > 0 ? '+' : '') + snap.delta_mb.toFixed(2) : '–'} MB</span>
-      </div>
-    `;
-    container.appendChild(item);
-  });
+function clearNodeSnapshot() {
+  nodeState = null;
+  const inp = document.getElementById('node-json-input');
+  if (inp) inp.value = '';
+  const panel = document.getElementById('node-analysis-panel');
+  if (panel) panel.style.display = 'none';
 }
 
-/* Object table renderer */
-function renderObjectTable() {
-  const table = document.getElementById('objects-table');
-  if (!table || !heapData) return;
-  
-  const tbody = table.querySelector('tbody') || (() => {
-    const tbody = document.createElement('tbody');
-    table.appendChild(tbody);
-    return tbody;
-  })();
-  
-  tbody.innerHTML = '';
-  
-  const objects = heapData.objects || [];
-  const sorted = objects.sort((a, b) => (b.retained_size || 0) - (a.retained_size || 0));
-  
-  sorted.slice(0, 50).forEach(obj => {
-    const row = tbody.insertRow();
-    row.innerHTML = `
-      <td>${obj.constructor || 'Unknown'}</td>
-      <td>${(obj.size / 1024).toFixed(1)} KB</td>
-      <td>${(obj.retained_size / 1024).toFixed(1)} KB</td>
-      <td>${obj.count || 1}</td>
-    `;
-  });
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* Search/filter objects */
-function filterObjects(query) {
-  const rows = document.querySelectorAll('#objects-table tbody tr');
-  rows.forEach(row => {
-    const text = row.textContent.toLowerCase();
-    row.style.display = text.includes(query.toLowerCase()) ? '' : 'none';
-  });
-}
-
-/* Tab switching */
-document.querySelectorAll('[data-tab]').forEach(tab => {
-  tab.addEventListener('click', () => {
-    const tabName = tab.dataset.tab;
-    document.querySelectorAll('[data-tab]').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('[data-tab-pane]').forEach(p => p.style.display = 'none');
-    
-    tab.classList.add('active');
-    const pane = document.querySelector(`[data-tab-pane="${tabName}"]`);
-    if (pane) pane.style.display = 'block';
-    
-    if (tabName === 'timeline') renderTimeline();
-    if (tabName === 'objects') renderObjectTable();
-  });
-});
-
-/* Search input handler */
-const searchInput = document.getElementById('search-objects');
-if (searchInput) {
-  searchInput.addEventListener('input', e => filterObjects(e.target.value));
-}
-
-/* Load sample data on startup */
-function loadDefaultData() {
-  const defaultHeap = {
-    timestamp: new Date().toISOString(),
-    total_heap_size: 52428800,
-    total_heap_executable_size: 1048576,
-    total_physical_size: 41943040,
-    total_available_size: 2143289344,
-    external_memory_usage: 5242880,
-    array_buffers_size: 10485760,
-    objects: [
-      { constructor: 'Array', size: 1024000, retained_size: 2048000, count: 512 },
-      { constructor: 'Object', size: 512000, retained_size: 1024000, count: 1024 },
-      { constructor: 'String', size: 256000, retained_size: 512000, count: 2048 },
-      { constructor: 'Buffer', size: 2097152, retained_size: 4194304, count: 8 },
-      { constructor: 'Function', size: 128000, retained_size: 256000, count: 256 },
+function loadNodeDemo() {
+  const demo = {
+    meta: {
+      filePath: '/tmp/snapshots/heap-2025-12-03T19-32-37-260Z-startup.heapsnapshot',
+      filename: 'heap-2025-12-03T19-32-37-260Z-startup.heapsnapshot',
+      fileSizeBytes: 52428800,
+      mtime: new Date().toISOString(),
+      nodeCount: 152340,
+      edgeCount: 198720,
+      v8Version: '12.4.254.14'
+    },
+    totalHeapSizeBytes: 54975488,
+    totalHeapSizeMB: 52.41,
+    nodeTypeStats: [
+      { type: 'string',   count: 48200, selfSizeBytes: 18350080, selfSizeMB: 17.50, heapFraction: 0.334 },
+      { type: 'object',   count: 31400, selfSizeBytes: 14155776, selfSizeMB: 13.50, heapFraction: 0.257 },
+      { type: 'array',    count: 8200,  selfSizeBytes: 9437184,  selfSizeMB: 9.00,  heapFraction: 0.172 },
+      { type: 'closure',  count: 12100, selfSizeBytes: 5242880,  selfSizeMB: 5.00,  heapFraction: 0.095 },
+      { type: 'code',     count: 3800,  selfSizeBytes: 3145728,  selfSizeMB: 3.00,  heapFraction: 0.057 },
+      { type: 'regexp',   count: 620,   selfSizeBytes: 1048576,  selfSizeMB: 1.00,  heapFraction: 0.019 },
+      { type: 'number',   count: 9100,  selfSizeBytes: 655360,   selfSizeMB: 0.625, heapFraction: 0.012 },
+      { type: 'symbol',   count: 1400,  selfSizeBytes: 327680,   selfSizeMB: 0.313, heapFraction: 0.006 }
+    ],
+    topConsumers: [
+      { name: 'IncomingMessage', type: 'object',  selfSizeBytes: 4194304, selfSizeMB: 4.00, nodeId: 39263 },
+      { name: 'Buffer',          type: 'array',   selfSizeBytes: 2097152, selfSizeMB: 2.00, nodeId: 44817 },
+      { name: 'LargeStringPool', type: 'string',  selfSizeBytes: 1572864, selfSizeMB: 1.50, nodeId: 52001 },
+      { name: 'Map',             type: 'object',  selfSizeBytes: 1048576, selfSizeMB: 1.00, nodeId: 61234 },
+      { name: '(closure)',       type: 'closure', selfSizeBytes: 786432,  selfSizeMB: 0.75, nodeId: 72345 },
+      { name: 'Array',           type: 'array',   selfSizeBytes: 524288,  selfSizeMB: 0.50, nodeId: 83456 },
+      { name: 'Set',             type: 'object',  selfSizeBytes: 393216,  selfSizeMB: 0.375,nodeId: 94567 },
+      { name: 'EventEmitter',    type: 'object',  selfSizeBytes: 262144,  selfSizeMB: 0.25, nodeId: 105678 }
+    ],
+    leakPatterns: [
+      {
+        category: 'event-listener',
+        severity: 'warning',
+        description: 'High number of event listener registrations detected. Possible listener accumulation.',
+        matchCount: 2840,
+        totalSizeBytes: 3145728,
+        recommendation: 'Check that EventEmitter instances call removeListener / off on cleanup.'
+      },
+      {
+        category: 'closure',
+        severity: 'warning',
+        description: 'Large closures referencing outer-scope variables may be preventing GC.',
+        matchCount: 620,
+        totalSizeBytes: 1572864,
+        recommendation: 'Audit closures in hot paths; avoid capturing large objects in callbacks.'
+      },
+      {
+        category: 'string-duplication',
+        severity: 'info',
+        description: 'String deduplication: 14% of string nodes share repeated values.',
+        matchCount: 6748,
+        totalSizeBytes: 2621440,
+        recommendation: 'Use String interning patterns or Symbol keys for frequently repeated strings.'
+      }
+    ],
+    stringAnalysis: {
+      totalStringCount: 48200,
+      totalStringSizeBytes: 18350080,
+      uniqueValueCount: 41452,
+      topRepeatedStrings: [
+        { value: 'application/json',      count: 3120, totalSizeBytes: 56160 },
+        { value: 'Authorization',          count: 2840, totalSizeBytes: 45440 },
+        { value: 'Content-Type',           count: 2650, totalSizeBytes: 34450 },
+        { value: 'GET',                    count: 1980, totalSizeBytes: 11880 },
+        { value: 'POST',                   count: 1340, totalSizeBytes: 8040  },
+        { value: 'undefined',              count: 1120, totalSizeBytes: 10080 },
+        { value: 'null',                   count: 980,  totalSizeBytes: 7840  },
+        { value: 'localhost',              count: 760,  totalSizeBytes: 9120  },
+        { value: 'keep-alive',             count: 640,  totalSizeBytes: 10240 },
+        { value: 'application/x-www-form-urlencoded', count: 520, totalSizeBytes: 28080 }
+      ],
+      isDuplicationConcern: false
+    },
+    hasCriticalIssues: false,
+    recommendations: [
+      'Heap is within normal range at 52.41 MB.',
+      'Monitor event listener count over time — 2840 registrations is elevated.',
+      'Investigate the top consumers list for unexpected large objects.',
+      '  npx heap-analyzer analyze heap-2025-12-03T19-32-37-260Z-startup.heapsnapshot'
     ]
   };
-  
-  const defaultTimeline = {
-    snapshots: Array.from({ length: 20 }, (_, i) => ({
-      timestamp: Date.now() - (20 - i) * 60000,
-      heap_size: 50000000 + Math.random() * 5000000,
-      delta_mb: (Math.random() - 0.5) * 2
-    }))
-  };
-  
-  applyData(defaultHeap);
-  timelineData = defaultTimeline;
-  renderTimeline();
+  const inp = document.getElementById('node-json-input');
+  if (inp) inp.value = JSON.stringify(demo, null, 2);
+  nodeState = demo;
+  renderNodeView();
 }
 
 /* Initialize on page load */
 window.addEventListener('DOMContentLoaded', () => {
-  loadDefaultData();
-  updateMetrics();
-  renderObjectTable();
-  
-  // Start live memory animation
-  setInterval(() => {
-    liveMemTarget += (Math.random() - 0.4) * 4;
-    liveMemTarget = Math.max(10, Math.min(95, liveMemTarget));
-    liveMem += (liveMemTarget - liveMem) * 0.1;
-    liveMemHistory.push(liveMem);
-    if (liveMemHistory.length > 100) liveMemHistory.shift();
-    renderLiveMemChart();
-  }, 100);
+  // Render all views in empty state — no auto-loading of stale demo data
+  updateHeader();
+  updateNavBadges();
+  renderDashboard();
 });
 
   </script>

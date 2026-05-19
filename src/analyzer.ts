@@ -99,6 +99,7 @@ interface LeakDetectionOptions {
   target?: string;
   final?: string;
   traceAllObjects?: boolean;
+  subprocessTimeout?: number;
 }
 
 export async function findMemoryLeaks(options: LeakDetectionOptions): Promise<void> {
@@ -301,19 +302,28 @@ export async function compareSnapshots(baselineFile: string, targetFile: string)
 }
 
 // Generic memlab command runner
-async function runMemlabCommand(command: string, args: string[], description: string): Promise<void> {
+async function runMemlabCommand(command: string, args: string[], description: string, subprocessTimeout?: number): Promise<void> {
   const { spawn } = await import('child_process');
-  
+
   console.log(`🚀 Running MemLab ${description}...`);
   console.log('');
 
   return new Promise((resolve, reject) => {
-    const child = spawn('npx', ['memlab', command, ...args], { 
+    const child = spawn('npx', ['memlab', command, ...args], {
       stdio: 'inherit',
       cwd: process.cwd()
     });
 
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (subprocessTimeout !== undefined && subprocessTimeout > 0) {
+      timer = setTimeout(() => {
+        child.kill('SIGTERM');
+        reject(new Error(`MemLab ${description} timed out after ${subprocessTimeout}ms`));
+      }, subprocessTimeout);
+    }
+
     child.on('close', (code) => {
+      if (timer !== undefined) clearTimeout(timer);
       console.log(`\n✅ MemLab ${description} complete!`);
       if (code === 0) {
         resolve();
@@ -324,6 +334,7 @@ async function runMemlabCommand(command: string, args: string[], description: st
     });
 
     child.on('error', (error) => {
+      if (timer !== undefined) clearTimeout(timer);
       console.error('❌ Error running memlab:', error.message);
       console.log('\n💡 Make sure memlab is installed: npm install -g @memlab/cli');
       reject(error);
@@ -426,13 +437,21 @@ export async function runMemlabFindLeaks(options: LeakDetectionOptions): Promise
 
     // Run memlab command
     return new Promise((resolve, reject) => {
-      const child = spawn('npx', args, { 
+      const child = spawn('npx', args, {
         stdio: ['inherit', 'pipe', 'pipe'], // Capture stdout and stderr
         cwd: process.cwd()
       });
 
       let output = '';
       let errorOutput = '';
+
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      if (options.subprocessTimeout !== undefined && options.subprocessTimeout > 0) {
+        timer = setTimeout(() => {
+          child.kill('SIGTERM');
+          reject(new Error(`MemLab find-leaks timed out after ${options.subprocessTimeout}ms`));
+        }, options.subprocessTimeout);
+      }
 
       child.stdout?.on('data', (data) => {
         const text = data.toString();
@@ -447,6 +466,7 @@ export async function runMemlabFindLeaks(options: LeakDetectionOptions): Promise
       });
 
       child.on('close', (code) => {
+        if (timer !== undefined) clearTimeout(timer);
         if (code !== 0) {
           console.log('\n⚠️  MemLab finished with warnings - check output above');
         }
@@ -454,6 +474,7 @@ export async function runMemlabFindLeaks(options: LeakDetectionOptions): Promise
       });
 
       child.on('error', (error) => {
+        if (timer !== undefined) clearTimeout(timer);
         console.error('❌ Error running memlab:', error.message);
         console.log('\n💡 Make sure memlab is installed: npm install -g @memlab/cli');
         reject(error);
@@ -467,7 +488,7 @@ export async function runMemlabFindLeaks(options: LeakDetectionOptions): Promise
 }
 
 // Memlab trace wrapper - analyze retainer traces for specific objects
-export async function runMemlabTrace(snapshotFile: string, nodeId: string): Promise<void> {
+export async function runMemlabTrace(snapshotFile: string, nodeId: string, subprocessTimeout?: number): Promise<void> {
   // Smart path resolution
   if (!snapshotFile.includes('/') && !snapshotFile.includes('\\')) {
     const snapshotPath = path.join('./snapshots', snapshotFile);
@@ -483,11 +504,11 @@ export async function runMemlabTrace(snapshotFile: string, nodeId: string): Prom
   console.log(`   Snapshot: ${path.basename(snapshotFile)}`);
 
   const args = ['--snapshot', path.resolve(snapshotFile), '--node-id', nodeId];
-  await runMemlabCommand('trace', args, 'retainer trace analysis');
+  await runMemlabCommand('trace', args, 'retainer trace analysis', subprocessTimeout);
 }
 
 // Capture retention trace output programmatically for enrichment
-export async function runMemlabTraceCapture(snapshotFile: string, nodeId: string): Promise<{raw: string, path: any[]}> {
+export async function runMemlabTraceCapture(snapshotFile: string, nodeId: string, subprocessTimeout?: number): Promise<{raw: string, path: any[]}> {
   const { spawn } = await import('node:child_process');
   // Smart path resolution
   if (!snapshotFile.includes('/') && !snapshotFile.includes('\\')) {
@@ -501,9 +522,19 @@ export async function runMemlabTraceCapture(snapshotFile: string, nodeId: string
   return new Promise((resolve) => {
     let output = '';
     const child = spawn('npx', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (subprocessTimeout !== undefined && subprocessTimeout > 0) {
+      timer = setTimeout(() => {
+        child.kill('SIGTERM');
+        resolve({ raw: output, path: [] }); // Resolve with partial output on timeout
+      }, subprocessTimeout);
+    }
+
     child.stdout.on('data', (d) => { output += d.toString(); });
     child.stderr.on('data', (d) => { output += d.toString(); });
     child.on('close', () => {
+      if (timer !== undefined) clearTimeout(timer);
       // Parse retention path lines
       const pathEntries: any[] = [];
       const lines = output.split(/\r?\n/);
@@ -538,12 +569,15 @@ export async function runMemlabTraceCapture(snapshotFile: string, nodeId: string
       }
       resolve({ raw: output, path: pathEntries });
     });
-    child.on('error', () => resolve({ raw: output, path: [] }));
+    child.on('error', () => {
+      if (timer !== undefined) clearTimeout(timer);
+      resolve({ raw: output, path: [] });
+    });
   });
 }
 
 // Memlab heap wrapper - interactive heap exploration
-export async function runMemlabHeap(snapshotFile: string): Promise<void> {
+export async function runMemlabHeap(snapshotFile: string, subprocessTimeout?: number): Promise<void> {
   // Smart path resolution
   if (!snapshotFile.includes('/') && !snapshotFile.includes('\\')) {
     const snapshotPath = path.join('./snapshots', snapshotFile);
@@ -559,11 +593,11 @@ export async function runMemlabHeap(snapshotFile: string): Promise<void> {
   console.log(`   Snapshot: ${path.basename(snapshotFile)}`);
 
   const args = ['--snapshot', path.resolve(snapshotFile)];
-  await runMemlabCommand('heap', args, 'interactive heap exploration');
+  await runMemlabCommand('heap', args, 'interactive heap exploration', subprocessTimeout);
 }
 
 // Memlab view-heap wrapper - heap visualization
-export async function runMemlabViewHeap(snapshotFile: string, nodeId?: string): Promise<void> {
+export async function runMemlabViewHeap(snapshotFile: string, nodeId?: string, subprocessTimeout?: number): Promise<void> {
   // Smart path resolution
   if (!snapshotFile.includes('/') && !snapshotFile.includes('\\')) {
     const snapshotPath = path.join('./snapshots', snapshotFile);
@@ -581,14 +615,14 @@ export async function runMemlabViewHeap(snapshotFile: string, nodeId?: string): 
 
   const args = ['--snapshot', path.resolve(snapshotFile)];
   if (nodeId) args.push('--node-id', nodeId);
-  
-  await runMemlabCommand('view-heap', args, 'heap visualization');
+
+  await runMemlabCommand('view-heap', args, 'heap visualization', subprocessTimeout);
 }
 
 // Memlab analyze wrapper - run analysis plugins
-export async function runMemlabAnalyze(pluginName: string, snapshotFile?: string): Promise<void> {
+export async function runMemlabAnalyze(pluginName: string, snapshotFile?: string, subprocessTimeout?: number): Promise<void> {
   const args = [pluginName];
-  
+
   if (snapshotFile) {
     // Smart path resolution
     if (!snapshotFile.includes('/') && !snapshotFile.includes('\\')) {
@@ -608,7 +642,7 @@ export async function runMemlabAnalyze(pluginName: string, snapshotFile?: string
     console.log(`🔬 Running analysis plugin: ${pluginName}`);
   }
 
-  await runMemlabCommand('analyze', args, `analysis with ${pluginName} plugin`);
+  await runMemlabCommand('analyze', args, `analysis with ${pluginName} plugin`, subprocessTimeout);
 }
 
 async function analyzeObjectTypeGrowth(baselineHeap: any, targetHeap: any): Promise<void> {

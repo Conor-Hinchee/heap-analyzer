@@ -198,6 +198,10 @@ const { values, positionals } = parseArgs({
       default: true,
       description: 'Generate memlab analysis reports (default: true, use --no-memlab-reports to disable)'
     },
+    'subprocess-timeout': {
+      type: 'string',
+      description: 'Timeout in ms for memlab subprocess calls (default: no timeout)'
+    },
     help: {
       type: 'boolean',
       short: 'h',
@@ -254,6 +258,7 @@ Object Inspection:
   --node-id <id>           Node ID for trace analysis
 
 General:
+  --subprocess-timeout <ms>  Kill memlab subprocess after this many milliseconds
   -h, --help               Show this help message
 
 Examples:
@@ -320,6 +325,7 @@ Snapshots Directory:
 
 const command = positionals[0];
 let file = values.file || positionals[1];
+const subprocessTimeout = values['subprocess-timeout'] ? parseInt(values['subprocess-timeout']) : undefined;
 
 if (command === 'list') {
   console.log('\n📂 Available snapshots:');
@@ -405,7 +411,7 @@ if (command === 'list') {
   }
   
   console.log(`\n🔍 Analyzing retainer trace for node ${nodeId}`);
-  await runMemlabTrace(file, nodeId);
+  await runMemlabTrace(file, nodeId, subprocessTimeout);
 } else if (command === 'investigate') {
   const invFile = positionals[1];
   const objectId = values['object-id'];
@@ -443,7 +449,7 @@ if (command === 'list') {
   const nodeId = String(objectId).replace(/^@/, '');
   console.log(`\n🧭 Step 2/3: Tracing retention path for ${objectId}...`);
   const { runMemlabTraceCapture } = await import('./analyzer.js');
-  const traceResult = await runMemlabTraceCapture(invFile, nodeId);
+  const traceResult = await runMemlabTraceCapture(invFile, nodeId, subprocessTimeout);
   const traceLines = traceResult.raw.split(/\r?\n/).filter(l => l.trim());
   const displayLines = traceLines.filter(l => l.startsWith('[') || l.trim().startsWith('--'));
   displayLines.forEach(l => console.log(l));
@@ -594,7 +600,7 @@ if (command === 'list') {
     process.exit(1);
   }
   console.log(`\n🔍 Starting interactive heap exploration`);
-  await runMemlabHeap(heapFile);
+  await runMemlabHeap(heapFile, subprocessTimeout);
 } else if (command === 'view-heap') {
   const file = positionals[1];
   const nodeId = values['node-id'];
@@ -606,7 +612,7 @@ if (command === 'list') {
   }
   
   console.log(`\n👀 Starting heap visualization`);
-  await runMemlabViewHeap(file, nodeId);
+  await runMemlabViewHeap(file, nodeId, subprocessTimeout);
 } else if (command === 'lens') {
   const file = positionals[1];
   
@@ -676,7 +682,7 @@ if (command === 'list') {
   }
   
   console.log(`\n🔬 Running analysis plugin: ${pluginName}`);
-  await runMemlabAnalyze(pluginName);
+  await runMemlabAnalyze(pluginName, undefined, subprocessTimeout);
 } else if (command === 'find-leaks') {
   const { runMemlabFindLeaks } = await import('./analyzer.js');
   
@@ -685,9 +691,10 @@ if (command === 'list') {
   
   if (values['snapshot-dir']) {
     console.log(`\n🔍 Running memlab leak detection on directory: ${values['snapshot-dir']}`);
-    memlabOutput = await runMemlabFindLeaks({ 
+    memlabOutput = await runMemlabFindLeaks({
       snapshotDir: values['snapshot-dir'],
-      traceAllObjects: values['trace-all-objects']
+      traceAllObjects: values['trace-all-objects'],
+      subprocessTimeout
     });
     snapshotFile = values['snapshot-dir'];
   } else if (values.baseline && values.target) {
@@ -696,7 +703,8 @@ if (command === 'list') {
       baseline: values.baseline,
       target: values.target,
       final: values.final, // optional
-      traceAllObjects: values['trace-all-objects']
+      traceAllObjects: values['trace-all-objects'],
+      subprocessTimeout
     });
     snapshotFile = values.final || values.target;
   } else {
@@ -851,7 +859,8 @@ if (command === 'list') {
     await runMemlabFindLeaks({
       baseline: snapshots[0],
       target: snapshots[snapshots.length - 1],
-      traceAllObjects: true
+      traceAllObjects: true,
+      subprocessTimeout
     });
   }
 } else {
